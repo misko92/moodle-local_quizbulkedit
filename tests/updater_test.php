@@ -212,13 +212,12 @@ final class updater_test extends \advanced_testcase {
         $shown = $this->shown($quizzes);
         $submitted = $shown;
         $submitted[$quiz1->id]['grademethod'] = '99';
-        $submitted[$quiz1->id]['browsersecurity'] = 'nonsense';
         $submitted[$quiz1->id]['reviewfrom'] = '123456789';
         $submitted[$quiz1->id]['visible'] = '2';
         [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
         $this->assertSame([], $changes);
         $this->assertEqualsCanonicalizing(
-            ['grademethod', 'browsersecurity', 'reviewfrom', 'visible'],
+            ['grademethod', 'reviewfrom', 'visible'],
             array_keys($errors[$quiz1->id])
         );
     }

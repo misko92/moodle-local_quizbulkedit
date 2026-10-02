@@ -13,7 +13,6 @@ In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the ta
 | Time limit | In minutes, 0 = no limit. |
 | Attempts | 0 = unlimited. |
 | Grading method | Changing it regrades the quiz, like the normal settings form does. |
-| Browser security | Shown only when an access rule offers a choice besides "None". |
 | Review options | Copy all review options from another quiz in the course. |
 
 - Edit any cell, or tick quizzes and use the toolbar to **Apply to selected** a value for one setting.

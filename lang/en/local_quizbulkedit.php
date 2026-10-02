@@ -27,7 +27,6 @@ defined('MOODLE_INTERNAL') || die();
 $string['applytoselected'] = 'Apply to selected';
 $string['attempts'] = 'Attempts';
 $string['attempts_hint'] = '0 = unlimited';
-$string['browsersecurity'] = 'Browser security';
 $string['bulkeditquizzes'] = 'Bulk edit quizzes';
 $string['changessaved'] = '{$a} quiz(zes) updated.';
 $string['clearvalue'] = 'Leave the value empty to clear it (no password / no network or date restriction).';

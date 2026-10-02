@@ -20,7 +20,6 @@ use cm_info;
 use context_module;
 use core_date;
 use DateTime;
-use mod_quiz\access_manager;
 use mod_quiz\quiz_settings;
 use stdClass;
 
@@ -41,13 +40,12 @@ use stdClass;
 class updater {
     /** @var string[] Editable columns of the quiz table. */
     public const QUIZFIELDS = [
-        'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'browsersecurity',
+        'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod',
     ];
 
     /** @var string[] All editable fields, in display order. visible is the course module's; reviewfrom is virtual. */
     public const FIELDS = [
-        'visible', 'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'browsersecurity',
-        'reviewfrom',
+        'visible', 'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'reviewfrom',
     ];
 
     /** @var string[] The review option bit fields copied by reviewfrom. */
@@ -55,20 +53,6 @@ class updater {
         'reviewattempt', 'reviewcorrectness', 'reviewmaxmarks', 'reviewmarks', 'reviewspecificfeedback',
         'reviewgeneralfeedback', 'reviewrightanswer', 'reviewoverallfeedback',
     ];
-
-    /**
-     * The fields worth showing on this site.
-     *
-     * Browser security is left out when no access rule offers a choice besides "None".
-     *
-     * @return string[]
-     */
-    public static function get_fields(): array {
-        return array_values(array_filter(
-            self::FIELDS,
-            fn($field) => $field !== 'browsersecurity' || count(self::choices($field)) > 1
-        ));
-    }
 
     /**
      * The quizzes in a course the current user may edit, in course order.
@@ -134,8 +118,6 @@ class updater {
             case 'grademethod':
                 require_once($CFG->dirroot . '/mod/quiz/locallib.php');
                 return quiz_get_grading_options();
-            case 'browsersecurity':
-                return access_manager::get_browser_security_choices();
             case 'reviewfrom':
                 $choices = ['' => get_string('reviewkeep', 'local_quizbulkedit')];
                 foreach ($quizzes as $quizid => ['cm' => $cm]) {
@@ -189,7 +171,7 @@ class updater {
             if ($input === '' || !array_key_exists($input, $choices)) {
                 return null;
             }
-            return $field === 'browsersecurity' ? $input : (int) $input;
+            return (int) $input;
         }
         switch ($field) {
             case 'timeopen':

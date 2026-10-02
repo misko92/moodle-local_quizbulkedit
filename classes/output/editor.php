@@ -64,7 +64,7 @@ class editor implements renderable, templatable {
             'attempts' => 'number',
         ];
         $hints = ['subnet', 'timelimit', 'attempts', 'reviewfrom'];
-        $fieldnames = updater::get_fields();
+        $fieldnames = updater::FIELDS;
 
         $fields = [];
         $choices = [];
@@ -84,13 +84,9 @@ class editor implements renderable, templatable {
                 $original = $this->original[$quizid][$field] ?? updater::format_value($field, $quiz->$field);
                 $value = $this->submitted[$quizid][$field] ?? $original;
                 $fieldchoices = $choices[$field];
-                if ($fieldchoices !== null) {
-                    if ($field === 'reviewfrom') {
-                        unset($fieldchoices[$quizid]);
-                    } else if (!array_key_exists($original, $fieldchoices)) {
-                        // E.g. a browser security rule that has since been disabled: keep it selectable.
-                        $fieldchoices[$original] = $original;
-                    }
+                if ($field === 'reviewfrom') {
+                    // A quiz can't copy review options from itself.
+                    unset($fieldchoices[$quizid]);
                 }
                 $cells[] = [
                     'field' => $field,
