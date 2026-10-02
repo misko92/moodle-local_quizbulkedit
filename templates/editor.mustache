@@ -42,7 +42,11 @@
                  "label": "Visibility: Quiz 1", "disabled": false,
                  "options": [{"value": "1", "label": "Shown", "selected": true}]}
             ],
-            "review": [{"label": "The attempt", "cells": [{"on": true}, {"on": false}]}]
+            "review": [{"label": "The attempt", "cells": [
+                {"field": "reviewattempt", "bit": 65536, "on": true, "changed": false, "id": "x1", "label": "The attempt (During)"}
+            ]}],
+            "reviewopen": false,
+            "unusedduring": "reviewcorrectness"
         }]
     }
 }}
@@ -112,7 +116,7 @@
                         {{#hint}}<div class="small fw-normal text-muted">{{.}}</div>{{/hint}}
                         {{#isreview}}
                         <button type="button" class="btn btn-link btn-sm p-0 fw-normal" data-action="togglereviewall">
-                            {{#str}} viewallreview, local_quizbulkedit {{/str}}
+                            {{#str}} showallreview, local_quizbulkedit {{/str}}
                         </button>
                         {{/isreview}}
                     </th>
@@ -134,6 +138,28 @@
                     </td>
                     {{#cells}}
                     <td class="{{#changed}}table-warning{{/changed}}" data-cell="{{field}}">
+                        {{#isreview}}
+                        {{#reviewinputs}}
+                        <input type="hidden" name="o[{{quizid}}][{{field}}]" value="{{original}}">
+                        <input type="hidden" name="q[{{quizid}}][{{field}}]" value="{{value}}"
+                               data-field="{{field}}" data-original="{{original}}" data-review="1">
+                        {{/reviewinputs}}
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="local_quizbulkedit_{{quizid}}_copy" class="visually-hidden">{{copylabel}}</label>
+                            <select id="local_quizbulkedit_{{quizid}}_copy" class="form-select form-select-sm w-auto"
+                                    data-action="reviewcopy">
+                                {{#copyoptions}}<option value="{{value}}">{{label}}</option>{{/copyoptions}}
+                            </select>
+                            <button type="button" class="btn btn-link btn-sm p-0" data-action="togglereview"
+                                    aria-controls="local_quizbulkedit_review{{quizid}}"
+                                    aria-expanded="{{#reviewopen}}true{{/reviewopen}}{{^reviewopen}}false{{/reviewopen}}"
+                                    aria-label="{{#str}} showreviewfor, local_quizbulkedit, {{name}} {{/str}}">
+                                {{#str}} showreview, local_quizbulkedit {{/str}}
+                            </button>
+                        </div>
+                        {{#error}}<div class="text-danger small">{{.}}</div>{{/error}}
+                        {{/isreview}}
+                        {{^isreview}}
                         <input type="hidden" name="o[{{quizid}}][{{field}}]" value="{{original}}">
                         <label for="local_quizbulkedit_{{quizid}}_{{field}}" class="visually-hidden">{{label}}</label>
                         {{#isselect}}
@@ -153,17 +179,12 @@
                                {{#error}}aria-invalid="true"{{/error}}>
                         {{/isselect}}
                         {{#error}}<div class="invalid-feedback">{{.}}</div>{{/error}}
-                        {{#isreview}}
-                        <button type="button" class="btn btn-link btn-sm p-0" data-action="togglereview"
-                                aria-controls="local_quizbulkedit_review{{quizid}}" aria-expanded="false"
-                                aria-label="{{#str}} viewreviewfor, local_quizbulkedit, {{name}} {{/str}}">
-                            {{#str}} viewreview, local_quizbulkedit {{/str}}
-                        </button>
                         {{/isreview}}
                     </td>
                     {{/cells}}
                 </tr>
-                <tr id="local_quizbulkedit_review{{quizid}}" data-reviewfor="{{quizid}}" hidden>
+                <tr id="local_quizbulkedit_review{{quizid}}" data-reviewfor="{{quizid}}" data-unusedduring="{{unusedduring}}"
+                    {{^reviewopen}}hidden{{/reviewopen}}>
                     <td></td>
                     <td colspan="{{colspan}}">
                         <table class="table table-sm table-bordered w-auto mb-1 small">
@@ -179,9 +200,10 @@
                                 <tr>
                                     <th scope="row" class="fw-normal">{{label}}</th>
                                     {{#cells}}
-                                    <td class="text-center">
-                                        {{#on}}<span aria-hidden="true">&#x2713;</span><span class="visually-hidden">{{#str}} yes {{/str}}</span>{{/on}}
-                                        {{^on}}<span aria-hidden="true" class="text-muted">&ndash;</span><span class="visually-hidden">{{#str}} no {{/str}}</span>{{/on}}
+                                    <td class="text-center{{#changed}} table-warning{{/changed}}">
+                                        <input type="checkbox" class="form-check-input" id="{{id}}"
+                                               data-reviewfield="{{field}}" data-bit="{{bit}}"{{#on}} checked{{/on}}>
+                                        <label for="{{id}}" class="visually-hidden">{{label}}</label>
                                     </td>
                                     {{/cells}}
                                 </tr>

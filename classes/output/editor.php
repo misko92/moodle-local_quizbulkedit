@@ -87,52 +87,87 @@ class editor implements renderable, templatable {
             'timelimit' => 'number',
             'attempts' => 'number',
         ];
-        $hints = ['subnet', 'timelimit', 'attempts', 'reviewfrom'];
-        $fieldnames = updater::FIELDS;
+        $hints = ['subnet', 'timelimit', 'attempts', 'review'];
+        // One column per field, except the review options, which share one column.
+        $columns = array_diff(updater::FIELDS, updater::REVIEWFIELDS);
+
+        $copychoices = [];
+        foreach ($this->quizzes as $quizid => ['cm' => $cm]) {
+            $copychoices[$quizid] = get_string('reviewcopy', 'local_quizbulkedit', $cm->get_formatted_name());
+        }
 
         $fields = [];
-        $choices = [];
-        foreach ($fieldnames as $field) {
-            $choices[$field] = updater::choices($field, $this->quizzes);
+        foreach ([...$columns, 'review'] as $field) {
             $fields[] = [
                 'field' => $field,
                 'label' => get_string($field, 'local_quizbulkedit'),
                 'hint' => in_array($field, $hints) ? get_string($field . '_hint', 'local_quizbulkedit') : null,
-                'isreview' => $field === 'reviewfrom',
-            ] + $this->control($field, $types[$field] ?? null, $choices[$field], '');
+                'isreview' => $field === 'review',
+            ] + $this->control(
+                $field,
+                $types[$field] ?? null,
+                $field === 'review' ? $copychoices : updater::choices($field),
+                ''
+            );
         }
 
         $rows = [];
         foreach ($this->quizzes as $quizid => ['cm' => $cm, 'quiz' => $quiz]) {
+            $name = $cm->get_formatted_name();
+            $values = [];
+            $originals = [];
+            foreach (updater::FIELDS as $field) {
+                $originals[$field] = $this->original[$quizid][$field] ?? updater::format_value($field, $quiz->$field);
+                $values[$field] = $this->submitted[$quizid][$field] ?? $originals[$field];
+            }
+
             $cells = [];
-            foreach ($fieldnames as $field) {
-                $original = $this->original[$quizid][$field] ?? updater::format_value($field, $quiz->$field);
-                $value = $this->submitted[$quizid][$field] ?? $original;
-                $fieldchoices = $choices[$field];
-                if ($field === 'reviewfrom') {
-                    // A quiz can't copy review options from itself.
-                    unset($fieldchoices[$quizid]);
-                }
+            foreach ($columns as $field) {
                 $cells[] = [
                     'field' => $field,
-                    'original' => $original,
-                    'changed' => $value !== $original,
+                    'original' => $originals[$field],
+                    'changed' => $values[$field] !== $originals[$field],
                     'error' => $this->errors[$quizid][$field] ?? null,
-                    'label' => get_string($field, 'local_quizbulkedit') . ': ' . $cm->get_formatted_name(),
-                    'isreview' => $field === 'reviewfrom',
+                    'label' => get_string($field, 'local_quizbulkedit') . ': ' . $name,
                     'disabled' => $field === 'visible' &&
                         !has_capability('moodle/course:activityvisibility', $cm->context),
-                ] + $this->control($field, $types[$field] ?? null, $fieldchoices, $value);
+                ] + $this->control($field, $types[$field] ?? null, updater::choices($field), $values[$field]);
             }
+
+            $reviewinputs = [];
+            $reviewchanged = false;
+            foreach (updater::REVIEWFIELDS as $field) {
+                $reviewinputs[] = ['field' => $field, 'value' => $values[$field], 'original' => $originals[$field]];
+                $reviewchanged = $reviewchanged || $values[$field] !== $originals[$field];
+            }
+            $reviewerrors = array_intersect_key($this->errors[$quizid] ?? [], array_flip(updater::REVIEWFIELDS));
+            $copyoptions = [['value' => '', 'label' => get_string('reviewcopyfrom', 'local_quizbulkedit')]];
+            foreach ($copychoices as $otherid => $label) {
+                if ($otherid != $quizid) {
+                    $copyoptions[] = ['value' => $otherid, 'label' => $label];
+                }
+            }
+            $cells[] = [
+                'field' => 'review',
+                'isreview' => true,
+                'changed' => $reviewchanged,
+                'error' => $reviewerrors ? reset($reviewerrors) : null,
+                'reviewinputs' => $reviewinputs,
+                'copyoptions' => $copyoptions,
+                'copylabel' => get_string('reviewcopyfor', 'local_quizbulkedit', $name),
+            ];
+
             $rows[] = [
                 'quizid' => $quizid,
-                'name' => $cm->get_formatted_name(),
+                'name' => $name,
                 'url' => (new moodle_url('/mod/quiz/view.php', ['id' => $cm->id]))->out(false),
                 'editurl' => (new moodle_url('/course/modedit.php', ['update' => $cm->id]))->out(false),
                 'section' => get_section_name($cm->get_course(), $cm->sectionnum),
                 'hidden' => !$cm->visible,
                 'cells' => $cells,
-                'review' => $this->review_grid($quiz),
+                'review' => $this->review_grid($quizid, $name, $values, $originals),
+                'reviewopen' => $reviewchanged || $reviewerrors,
+                'unusedduring' => implode(' ', $this->unused_during($quiz->preferredbehaviour)),
             ];
         }
 
@@ -153,21 +188,54 @@ class editor implements renderable, templatable {
     }
 
     /**
-     * Template data for the read-only grid of a quiz's review options.
+     * Template data for the grid of a quiz's review option checkboxes.
      *
-     * @param \stdClass $quiz
-     * @return array rows of [label, cells => [on]]
+     * @param int $quizid
+     * @param string $name formatted quiz name
+     * @param array $values field => current value string
+     * @param array $originals field => original value string
+     * @return array rows of [label, cells => [field, bit, on, changed, id, label]]
      */
-    protected function review_grid(\stdClass $quiz): array {
+    protected function review_grid(int $quizid, string $name, array $values, array $originals): array {
         $items = [];
         foreach (self::REVIEWITEMS as $field => [$identifier, $component]) {
+            $option = get_string($identifier, $component);
             $cells = [];
-            foreach (self::REVIEWTIMES as $when) {
-                $cells[] = ['on' => (bool) ($quiz->$field & $when)];
+            foreach (self::REVIEWTIMES as $time => $bit) {
+                $on = (bool) ((int) $values[$field] & $bit);
+                $cells[] = [
+                    'field' => $field,
+                    'bit' => $bit,
+                    'on' => $on,
+                    'changed' => $on !== (bool) ((int) $originals[$field] & $bit),
+                    'id' => "local_quizbulkedit_{$quizid}_{$field}_{$time}",
+                    'label' => get_string('reviewcheckbox', 'local_quizbulkedit', (object) [
+                        'option' => $option,
+                        'when' => get_string('review' . $time, 'quiz'),
+                        'quiz' => $name,
+                    ]),
+                ];
             }
-            $items[] = ['label' => get_string($identifier, $component), 'cells' => $cells];
+            $items[] = ['label' => $option, 'cells' => $cells];
         }
         return $items;
+    }
+
+    /**
+     * Review fields the question behaviour doesn't use during the attempt.
+     *
+     * @param string $behaviour
+     * @return string[] review field names
+     */
+    protected function unused_during(string $behaviour): array {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+        try {
+            $unused = \question_engine::get_behaviour_unused_display_options($behaviour);
+        } catch (\Throwable $e) {
+            return [];
+        }
+        return array_map(fn($option) => 'review' . $option, $unused);
     }
 
     /**

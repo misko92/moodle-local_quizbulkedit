@@ -20,6 +20,7 @@ use cm_info;
 use context_module;
 use core_date;
 use DateTime;
+use mod_quiz\question\display_options;
 use mod_quiz\quiz_settings;
 use stdClass;
 
@@ -38,27 +39,33 @@ use stdClass;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class updater {
-    /** @var string[] Editable columns of the quiz table. */
-    public const QUIZFIELDS = [
-        'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod',
-    ];
-
-    /** @var string[] All editable fields, in display order. visible is the course module's; reviewfrom is virtual. */
-    public const FIELDS = [
-        'visible', 'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'reviewfrom',
-    ];
-
-    /** @var string[] The review option bit fields copied by reviewfrom. */
+    /** @var string[] The review option bit fields (one bit per review time, see display_options). */
     public const REVIEWFIELDS = [
         'reviewattempt', 'reviewcorrectness', 'reviewmaxmarks', 'reviewmarks', 'reviewspecificfeedback',
         'reviewgeneralfeedback', 'reviewrightanswer', 'reviewoverallfeedback',
     ];
 
+    /** @var string[] Editable columns of the quiz table. */
+    public const QUIZFIELDS = [
+        'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', ...self::REVIEWFIELDS,
+    ];
+
+    /** @var string[] All editable fields, in display order. visible is the course module's. */
+    public const FIELDS = ['visible', ...self::QUIZFIELDS];
+
+    /** @var int All review time bits. */
+    protected const REVIEWBITS = display_options::DURING | display_options::IMMEDIATELY_AFTER |
+        display_options::LATER_WHILE_OPEN | display_options::AFTER_CLOSE;
+
+    /** @var string[] Review options that need "The attempt" at the same time (except during the attempt). */
+    protected const NEEDSATTEMPT = [
+        'reviewcorrectness', 'reviewspecificfeedback', 'reviewgeneralfeedback', 'reviewrightanswer',
+    ];
+
     /**
      * The quizzes in a course the current user may edit, in course order.
      *
-     * Each quiz record also carries the virtual fields visible (from the course
-     * module) and reviewfrom (always '').
+     * Each quiz record also carries visible, from the course module.
      *
      * @param stdClass $course
      * @return array quiz id => ['cm' => cm_info, 'quiz' => stdClass]
@@ -81,7 +88,7 @@ class updater {
             'id',
             array_keys($cms),
             '',
-            'id, course, name, ' . implode(', ', array_merge(self::QUIZFIELDS, self::REVIEWFIELDS))
+            'id, course, name, preferredbehaviour, ' . implode(', ', self::QUIZFIELDS)
         );
 
         // Order by position on the course page.
@@ -93,7 +100,6 @@ class updater {
             if (isset($quizrecords[$quizid])) {
                 $quiz = $quizrecords[$quizid];
                 $quiz->visible = (int) $cm->visible;
-                $quiz->reviewfrom = '';
                 $quizzes[$quizid] = ['cm' => $cm, 'quiz' => $quiz];
             }
         }
@@ -104,10 +110,9 @@ class updater {
      * The allowed values of a drop-down field.
      *
      * @param string $field
-     * @param array $quizzes from get_quizzes(), needed for reviewfrom
      * @return array|null value => label, or null if the field is free input
      */
-    public static function choices(string $field, array $quizzes = []): ?array {
+    public static function choices(string $field): ?array {
         global $CFG;
         switch ($field) {
             case 'visible':
@@ -118,12 +123,6 @@ class updater {
             case 'grademethod':
                 require_once($CFG->dirroot . '/mod/quiz/locallib.php');
                 return quiz_get_grading_options();
-            case 'reviewfrom':
-                $choices = ['' => get_string('reviewkeep', 'local_quizbulkedit')];
-                foreach ($quizzes as $quizid => ['cm' => $cm]) {
-                    $choices[$quizid] = get_string('reviewcopy', 'local_quizbulkedit', $cm->get_formatted_name());
-                }
-                return $choices;
         }
         return null;
     }
@@ -152,6 +151,9 @@ class updater {
             case 'visible':
                 return (string) (int) $value;
             default:
+                if (in_array($field, self::REVIEWFIELDS)) {
+                    return (string) (int) $value;
+                }
                 return (string) $value;
         }
     }
@@ -161,12 +163,17 @@ class updater {
      *
      * @param string $field
      * @param string $input
-     * @param array $quizzes from get_quizzes(), needed for reviewfrom
      * @return mixed the DB value, or null if the input is invalid
      */
-    public static function parse_value(string $field, string $input, array $quizzes = []) {
+    public static function parse_value(string $field, string $input) {
         $input = trim($input);
-        $choices = self::choices($field, $quizzes);
+        if (in_array($field, self::REVIEWFIELDS)) {
+            if (!preg_match('/^\d+$/', $input) || ((int) $input & ~self::REVIEWBITS)) {
+                return null;
+            }
+            return (int) $input;
+        }
+        $choices = self::choices($field);
         if ($choices !== null) {
             if ($input === '' || !array_key_exists($input, $choices)) {
                 return null;
@@ -244,12 +251,9 @@ class updater {
                 if ($input === $orig) {
                     continue;
                 }
-                $value = self::parse_value($field, $input, $quizzes);
+                $value = self::parse_value($field, $input);
                 if ($value === null) {
                     $errors[$quizid][$field] = get_string(self::error_string($field), 'local_quizbulkedit');
-                    continue;
-                }
-                if ($field === 'reviewfrom' && $value == $quizid) {
                     continue;
                 }
                 if ($field === 'visible' && !has_capability('moodle/course:activityvisibility', $cm->context)) {
@@ -258,6 +262,23 @@ class updater {
                 }
                 if ((string) $value !== (string) $quiz->$field) {
                     $changes[$quizid][$field] = $value;
+                }
+            }
+
+            if (array_intersect_key($changes[$quizid] ?? [], array_flip(self::REVIEWFIELDS))) {
+                $review = [];
+                foreach (self::REVIEWFIELDS as $field) {
+                    $review[$field] = $changes[$quizid][$field] ?? (int) $quiz->$field;
+                }
+                foreach (self::normalise_review($review, $quiz->preferredbehaviour) as $field => $value) {
+                    if ($value != $quiz->$field) {
+                        $changes[$quizid][$field] = $value;
+                    } else {
+                        unset($changes[$quizid][$field]);
+                    }
+                }
+                if (empty($changes[$quizid])) {
+                    unset($changes[$quizid]);
                 }
             }
 
@@ -273,6 +294,42 @@ class updater {
     }
 
     /**
+     * Apply the same review option rules as the quiz settings form.
+     *
+     * The form greys out (and so saves as off) options that make no sense:
+     * marks without max marks, details without the attempt itself, and during-
+     * the-attempt options the question behaviour doesn't use. It also always
+     * shows the attempt during the attempt and never the overall feedback.
+     *
+     * @param array $review review field => bits
+     * @param string $behaviour the quiz's preferred behaviour
+     * @return array review field => bits
+     */
+    public static function normalise_review(array $review, string $behaviour): array {
+        global $CFG;
+        require_once($CFG->libdir . '/questionlib.php');
+
+        $review['reviewattempt'] |= display_options::DURING;
+        $review['reviewoverallfeedback'] &= ~display_options::DURING;
+        try {
+            $unused = \question_engine::get_behaviour_unused_display_options($behaviour);
+        } catch (\Throwable $e) {
+            $unused = [];
+        }
+        foreach ($unused as $option) {
+            if (isset($review['review' . $option])) {
+                $review['review' . $option] &= ~display_options::DURING;
+            }
+        }
+        $review['reviewmarks'] &= $review['reviewmaxmarks'];
+        $afterattempt = $review['reviewattempt'] | display_options::DURING;
+        foreach (self::NEEDSATTEMPT as $field) {
+            $review[$field] &= $afterattempt;
+        }
+        return $review;
+    }
+
+    /**
      * The lang string shown when a field's value can't be parsed.
      *
      * @param string $field
@@ -281,6 +338,9 @@ class updater {
     private static function error_string(string $field): string {
         if (in_array($field, ['timeopen', 'timeclose'])) {
             return 'errordate';
+        }
+        if (in_array($field, self::REVIEWFIELDS)) {
+            return 'errorreview';
         }
         if (self::choices($field) !== null) {
             return 'errorchoice';
@@ -301,16 +361,6 @@ class updater {
         require_once($CFG->dirroot . '/mod/quiz/lib.php');
         require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
-        // Review options are copied from the sources as they were before this save.
-        $sourceids = array_filter(array_column($changes, 'reviewfrom'));
-        $sources = $sourceids ? $DB->get_records_list(
-            'quiz',
-            'id',
-            array_unique($sourceids),
-            '',
-            'id, course, ' . implode(', ', self::REVIEWFIELDS)
-        ) : [];
-
         $transaction = $DB->start_delegated_transaction();
         $count = 0;
         foreach ($changes as $quizid => $fields) {
@@ -324,15 +374,6 @@ class updater {
             require_capability('moodle/course:manageactivities', $context);
 
             $update = array_intersect_key($fields, array_flip(self::QUIZFIELDS));
-            if (!empty($fields['reviewfrom'])) {
-                $source = $sources[$fields['reviewfrom']] ?? null;
-                if (!$source || $source->course != $course->id) {
-                    throw new \moodle_exception('invalidrecord', 'error', '', 'quiz');
-                }
-                foreach (self::REVIEWFIELDS as $field) {
-                    $update[$field] = $source->$field;
-                }
-            }
 
             $old = clone($quiz);
             if ($update) {

@@ -176,19 +176,17 @@ final class updater_test extends \advanced_testcase {
         updater::apply($course, [$quiz2->id => ['password' => 'x']]);
     }
 
-    public function test_visibility_grademethod_and_review_copy(): void {
+    public function test_visibility_grademethod_and_review_options(): void {
         global $DB;
         [$course, $quiz1, $quiz2] = $this->setup_course();
-        $DB->set_field('quiz', 'reviewrightanswer', 0x1111, ['id' => $quiz1->id]);
         $DB->set_field('quiz', 'reviewrightanswer', 0, ['id' => $quiz2->id]);
         $quizzes = updater::get_quizzes($course);
         $shown = $this->shown($quizzes);
         $submitted = $shown;
         $submitted[$quiz2->id]['visible'] = '0';
         $submitted[$quiz2->id]['grademethod'] = (string) QUIZ_ATTEMPTLAST;
-        $submitted[$quiz2->id]['reviewfrom'] = (string) $quiz1->id;
-        // Copying from itself is a no-op.
-        $submitted[$quiz1->id]['reviewfrom'] = (string) $quiz1->id;
+        $submitted[$quiz2->id]['reviewattempt'] = (string) 0x11110;
+        $submitted[$quiz2->id]['reviewrightanswer'] = (string) 0x01010;
 
         [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
         $this->assertSame([], $errors);
@@ -197,7 +195,8 @@ final class updater_test extends \advanced_testcase {
 
         $after = $DB->get_record('quiz', ['id' => $quiz2->id]);
         $this->assertEquals(QUIZ_ATTEMPTLAST, $after->grademethod);
-        $this->assertEquals(0x1111, $after->reviewrightanswer);
+        $this->assertEquals(0x01010, $after->reviewrightanswer);
+        $this->assertEquals(0x11110, $after->reviewattempt);
         $this->assertEquals(0, $DB->get_field(
             'course_modules',
             'visible',
@@ -212,12 +211,12 @@ final class updater_test extends \advanced_testcase {
         $shown = $this->shown($quizzes);
         $submitted = $shown;
         $submitted[$quiz1->id]['grademethod'] = '99';
-        $submitted[$quiz1->id]['reviewfrom'] = '123456789';
+        $submitted[$quiz1->id]['reviewmarks'] = '123456789';
         $submitted[$quiz1->id]['visible'] = '2';
         [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
         $this->assertSame([], $changes);
         $this->assertEqualsCanonicalizing(
-            ['grademethod', 'reviewfrom', 'visible'],
+            ['grademethod', 'reviewmarks', 'visible'],
             array_keys($errors[$quiz1->id])
         );
     }
@@ -264,5 +263,52 @@ final class updater_test extends \advanced_testcase {
         [$changes] = updater::collect_changes($quizzes, $submitted, $shown);
         updater::apply($course, $changes);
         $this->assertSame('', $DB->get_field('quiz', 'subnet', ['id' => $quiz1->id]));
+    }
+
+    public function test_review_options_follow_quiz_form_rules(): void {
+        global $DB;
+        [$course, $quiz1] = $this->setup_course();
+        $DB->set_field('quiz', 'preferredbehaviour', 'deferredfeedback', ['id' => $quiz1->id]);
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        // The attempt only during: the details after the attempt can't be shown.
+        $submitted[$quiz1->id]['reviewattempt'] = '0';
+        // During is unused by deferred feedback; immediately after needs the attempt.
+        $submitted[$quiz1->id]['reviewrightanswer'] = (string) 0x11000;
+        // Marks need max marks at the same time.
+        $submitted[$quiz1->id]['reviewmaxmarks'] = (string) 0x00100;
+        $submitted[$quiz1->id]['reviewmarks'] = (string) 0x00110;
+        // Overall feedback can never be shown during the attempt.
+        $submitted[$quiz1->id]['reviewoverallfeedback'] = (string) 0x10010;
+
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame([], $errors);
+        updater::apply($course, $changes);
+
+        $after = $DB->get_record('quiz', ['id' => $quiz1->id]);
+        $this->assertEquals(0x10000, $after->reviewattempt);
+        $this->assertEquals(0, $after->reviewrightanswer);
+        $this->assertEquals(0x00100, $after->reviewmarks);
+        $this->assertEquals(0x00010, $after->reviewoverallfeedback);
+
+        $this->assertSame(
+            (string) $after->reviewcorrectness,
+            updater::format_value('reviewcorrectness', $after->reviewcorrectness)
+        );
+    }
+
+    public function test_untouched_nonconforming_review_options_are_left_alone(): void {
+        global $DB;
+        [$course, $quiz1] = $this->setup_course();
+        // E.g. set by an older Moodle or a restore: marks without max marks.
+        $DB->set_field('quiz', 'reviewmaxmarks', 0, ['id' => $quiz1->id]);
+        $DB->set_field('quiz', 'reviewmarks', 0x00010, ['id' => $quiz1->id]);
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['password'] = 'changed';
+        [$changes] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame([$quiz1->id => ['password' => 'changed']], $changes);
     }
 }

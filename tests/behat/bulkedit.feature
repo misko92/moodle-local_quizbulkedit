@@ -68,7 +68,7 @@ Feature: Bulk edit quiz settings
     And I set the field "Filter" to "quiz b"
     Then I should see "Showing 1 of 3 quizzes"
     And "Select Quiz A" "checkbox" should not be visible
-    And I click on "View review options of Quiz B" "button"
+    And I click on "Show review options of Quiz B" "button"
     And I should see "Review options of Quiz B"
     And I click on "Select all quizzes" "checkbox"
     And I set the field "Setting" to "Password"
@@ -81,3 +81,25 @@ Feature: Bulk edit quiz settings
     And the field "Password: Quiz A" matches value "aaa"
     And the field "Password: Quiz B" matches value "onlyb"
     And the field "Password: Quiz C" matches value "ccc"
+
+  Scenario: Edit review options in the grid
+    Given I am on the "Course 1" course page logged in as teacher1
+    When I navigate to "Bulk edit quizzes" in current page administration
+    And I click on "Show review options of Quiz B" "button"
+    And I set the field "Right answer (Immediately after the attempt): Quiz B" to "1"
+    And I set the field "The attempt (Immediately after the attempt): Quiz B" to "0"
+    # Like the quiz settings form: no attempt, so no right answer either.
+    Then the "Right answer (Immediately after the attempt): Quiz B" "checkbox" should be disabled
+    And the field "Right answer (Immediately after the attempt): Quiz B" matches value "0"
+    And the "The attempt (During the attempt): Quiz B" "checkbox" should be disabled
+    And I set the field "The attempt (Immediately after the attempt): Quiz B" to "1"
+    And I set the field "Right answer (Immediately after the attempt): Quiz B" to "1"
+    And I set the field "Right answer (Later, while the quiz is still open): Quiz B" to "0"
+    And I press "Save changes"
+    And I should see "1 quiz(zes) updated."
+    And I click on "Show review options of Quiz B" "button"
+    And the field "Right answer (Immediately after the attempt): Quiz B" matches value "1"
+    And the field "Right answer (Later, while the quiz is still open): Quiz B" matches value "0"
+    And I click on "Show review options of Quiz C" "button"
+    And I set the field "Copy review options to Quiz C from" to "Same as Quiz B"
+    And the field "Right answer (Later, while the quiz is still open): Quiz C" matches value "0"

@@ -21,6 +21,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+/* eslint-disable no-bitwise -- quiz review options are stored as bit fields. */
+
 import {getString} from 'core/str';
 import {add as addToast} from 'core/toast';
 import {watchFormById, markFormChangedFromNode} from 'core_form/changechecker';
@@ -60,6 +62,58 @@ const setValue = (input, value) => {
     input.classList.remove('is-invalid');
     refreshChanged(input);
     markFormChangedFromNode(input);
+};
+
+/** Review time bits, as in mod_quiz\question\display_options. */
+const DURING = 0x10000;
+const AFTER_CLOSE = 0x00010;
+
+/** Review options that need "The attempt" at the same time (except during the attempt). */
+const NEEDS_ATTEMPT = ['reviewcorrectness', 'reviewspecificfeedback', 'reviewgeneralfeedback', 'reviewrightanswer'];
+
+/**
+ * Apply the quiz settings form's review option rules (mirrors updater::normalise_review()).
+ *
+ * @param {Object<string, number>} review field => bits
+ * @param {string[]} unusedDuring fields the question behaviour doesn't use during the attempt
+ * @returns {Object<string, number>}
+ */
+const normaliseReview = (review, unusedDuring) => {
+    review.reviewattempt |= DURING;
+    review.reviewoverallfeedback &= ~DURING;
+    unusedDuring.forEach((field) => {
+        if (field in review) {
+            review[field] &= ~DURING;
+        }
+    });
+    review.reviewmarks &= review.reviewmaxmarks;
+    NEEDS_ATTEMPT.forEach((field) => {
+        review[field] &= review.reviewattempt | DURING;
+    });
+    return review;
+};
+
+/**
+ * Whether a review checkbox can be changed, following the quiz settings form.
+ *
+ * @param {string} field
+ * @param {number} bit
+ * @param {Object<string, number>} review
+ * @param {string[]} unusedDuring
+ * @param {boolean} hasClose whether the quiz has a close date
+ * @returns {boolean}
+ */
+const reviewLocked = (field, bit, review, unusedDuring, hasClose) => {
+    if (bit === DURING && (['reviewattempt', 'reviewoverallfeedback'].includes(field) || unusedDuring.includes(field))) {
+        return true;
+    }
+    if (bit === AFTER_CLOSE && !hasClose) {
+        return true;
+    }
+    if (field === 'reviewmarks' && !(review.reviewmaxmarks & bit)) {
+        return true;
+    }
+    return bit !== DURING && NEEDS_ATTEMPT.includes(field) && !(review.reviewattempt & bit);
 };
 
 /**
@@ -107,11 +161,16 @@ export const init = (formId) => {
         const field = fieldSelect.value;
         const value = valueControl().value;
         (await requireSelection()).forEach((row) => {
+            if (field === 'review') {
+                copyReview(row, value);
+                return;
+            }
             const control = row.querySelector(`[data-field="${field}"]`);
-            // A quiz can't copy review options from itself, so its own option is missing.
-            const allowed = control.tagName !== 'SELECT' || [...control.options].some((o) => o.value === value);
-            if (!control.disabled && allowed) {
+            if (!control.disabled) {
                 setValue(control, value);
+                if (field === 'timeclose') {
+                    syncReview(row);
+                }
             }
         });
     });
@@ -124,6 +183,45 @@ export const init = (formId) => {
 
     const quizRows = [...form.querySelectorAll('tr[data-quizid]')];
     const reviewRow = (row) => form.querySelector(`tr[data-reviewfor="${row.dataset.quizid}"]`);
+    const quizRow = (quizid) => form.querySelector(`tr[data-quizid="${quizid}"]`);
+    const reviewInputs = (row) => [...row.querySelectorAll('input[data-review]')];
+    const getReview = (row) => Object.fromEntries(reviewInputs(row).map((input) => [input.dataset.field, Number(input.value)]));
+    const unusedDuring = (row) => reviewRow(row).dataset.unusedduring.split(' ').filter((field) => field.length);
+
+    // Show the review hidden inputs in the grid: ticks, locked boxes and change highlights.
+    const syncReview = (row) => {
+        const review = getReview(row);
+        const hasClose = row.querySelector('input[data-field="timeclose"]').value !== '';
+        const originals = Object.fromEntries(
+            reviewInputs(row).map((input) => [input.dataset.field, Number(input.dataset.original)])
+        );
+        reviewRow(row).querySelectorAll('input[data-reviewfield]').forEach((box) => {
+            const field = box.dataset.reviewfield;
+            const bit = Number(box.dataset.bit);
+            box.checked = Boolean(review[field] & bit);
+            box.disabled = reviewLocked(field, bit, review, unusedDuring(row), hasClose);
+            box.closest('td').classList.toggle('table-warning', (review[field] & bit) !== (originals[field] & bit));
+        });
+        row.querySelector('td[data-cell="review"]').classList.toggle('table-warning',
+            reviewInputs(row).some((input) => input.value !== input.dataset.original));
+    };
+
+    const setReview = (row, review) => {
+        normaliseReview(review, unusedDuring(row));
+        reviewInputs(row).forEach((input) => {
+            input.value = String(review[input.dataset.field]);
+        });
+        markFormChangedFromNode(reviewInputs(row)[0]);
+        syncReview(row);
+    };
+
+    const copyReview = (row, sourceId) => {
+        const source = quizRow(sourceId);
+        if (source && source !== row) {
+            setReview(row, getReview(source));
+        }
+    };
+    quizRows.forEach(syncReview);
     const setReviewOpen = (row, open) => {
         reviewRow(row).hidden = !open || row.hidden;
         row.querySelector('[data-action="togglereview"]').setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -175,7 +273,17 @@ export const init = (formId) => {
         });
     });
     form.addEventListener('change', (e) => {
-        if (e.target.dataset.action === 'select') {
+        if (e.target.dataset.reviewfield) {
+            const row = quizRow(e.target.closest('tr[data-reviewfor]').dataset.reviewfor);
+            const review = getReview(row);
+            const bit = Number(e.target.dataset.bit);
+            review[e.target.dataset.reviewfield] = e.target.checked ?
+                review[e.target.dataset.reviewfield] | bit : review[e.target.dataset.reviewfield] & ~bit;
+            setReview(row, review);
+        } else if (e.target.dataset.action === 'reviewcopy') {
+            copyReview(e.target.closest('tr'), e.target.value);
+            e.target.value = '';
+        } else if (e.target.dataset.action === 'select') {
             const boxes = rowBoxes();
             selectAll.checked = boxes.every((box) => box.checked);
             selectAll.indeterminate = !selectAll.checked && boxes.some((box) => box.checked);
@@ -185,6 +293,9 @@ export const init = (formId) => {
     form.addEventListener('input', (e) => {
         if (e.target.dataset.original !== undefined) {
             refreshChanged(e.target);
+        }
+        if (e.target.dataset.field === 'timeclose') {
+            syncReview(e.target.closest('tr'));
         }
     });
 
