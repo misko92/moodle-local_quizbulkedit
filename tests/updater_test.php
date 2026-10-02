@@ -311,4 +311,69 @@ final class updater_test extends \advanced_testcase {
         [$changes] = updater::collect_changes($quizzes, $submitted, $shown);
         $this->assertSame([$quiz1->id => ['password' => 'changed']], $changes);
     }
+
+    public function test_easy_settings(): void {
+        global $DB;
+        [$course, $quiz1] = $this->setup_course();
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $new = [
+            'overduehandling' => 'autosubmit',
+            'navmethod' => 'sequential',
+            'delay1' => '30',
+            'delay2' => '1.5',
+            'shuffleanswers' => '0',
+            'attemptonlast' => '1',
+            'canredoquestions' => '1',
+            'showuserpicture' => (string) QUIZ_SHOWIMAGE_LARGE,
+            'decimalpoints' => '0',
+            'questiondecimalpoints' => '-1',
+            'showblocks' => '1',
+        ];
+        $submitted[$quiz1->id] = $new + $submitted[$quiz1->id];
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame([], $errors);
+        updater::apply($course, $changes);
+
+        $after = $DB->get_record('quiz', ['id' => $quiz1->id]);
+        $this->assertSame('autosubmit', $after->overduehandling);
+        $this->assertSame('sequential', $after->navmethod);
+        $this->assertEquals(30 * MINSECS, $after->delay1);
+        $this->assertEquals(90, $after->delay2);
+        $this->assertEquals(0, $after->shuffleanswers);
+        $this->assertEquals(1, $after->attemptonlast);
+        $this->assertEquals(1, $after->canredoquestions);
+        $this->assertEquals(QUIZ_SHOWIMAGE_LARGE, $after->showuserpicture);
+        $this->assertEquals(0, $after->decimalpoints);
+        $this->assertEquals(-1, $after->questiondecimalpoints);
+        $this->assertEquals(1, $after->showblocks);
+        foreach ($new as $field => $value) {
+            $this->assertSame($value, updater::format_value($field, $after->$field), $field);
+        }
+    }
+
+    public function test_easy_settings_validation(): void {
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        set_config('graceperiodmin', 60, 'quiz');
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['overduehandling'] = 'graceperiod';
+        $submitted[$quiz1->id]['graceperiod'] = '1';
+        $submitted[$quiz1->id]['navmethod'] = 'sideways';
+        $submitted[$quiz1->id]['decimalpoints'] = '9';
+        $submitted[$quiz1->id]['delay1'] = '-5';
+        // Long enough: no error.
+        $submitted[$quiz2->id]['overduehandling'] = 'graceperiod';
+        $submitted[$quiz2->id]['graceperiod'] = '10';
+
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertEqualsCanonicalizing(
+            ['graceperiod', 'navmethod', 'decimalpoints', 'delay1'],
+            array_keys($errors[$quiz1->id])
+        );
+        $this->assertArrayNotHasKey($quiz2->id, $errors);
+        $this->assertSame(['overduehandling' => 'graceperiod', 'graceperiod' => 600], $changes[$quiz2->id]);
+    }
 }

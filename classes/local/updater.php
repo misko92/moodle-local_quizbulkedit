@@ -45,13 +45,49 @@ class updater {
         'reviewgeneralfeedback', 'reviewrightanswer', 'reviewoverallfeedback',
     ];
 
-    /** @var string[] Editable columns of the quiz table. */
-    public const QUIZFIELDS = [
-        'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', ...self::REVIEWFIELDS,
+    /**
+     * @var array Table columns by group, in display order. 'review' is one column for all REVIEWFIELDS.
+     *
+     * Groups follow the quiz settings form, except that the extra restrictions
+     * (password, network address) come first, as they are the most used here.
+     */
+    public const COLUMNGROUPS = [
+        'general' => ['visible'],
+        'restrictions' => ['password', 'subnet', 'delay1', 'delay2'],
+        'timing' => ['timeopen', 'timeclose', 'timelimit', 'overduehandling', 'graceperiod'],
+        'grade' => ['attempts', 'grademethod'],
+        'layout' => ['navmethod'],
+        'behaviour' => ['shuffleanswers', 'canredoquestions', 'attemptonlast'],
+        'review' => ['review'],
+        'appearance' => ['showuserpicture', 'decimalpoints', 'questiondecimalpoints', 'showblocks'],
     ];
 
-    /** @var string[] All editable fields, in display order. visible is the course module's. */
+    /** @var string[] Columns shown until the user picks their own. */
+    public const DEFAULTCOLUMNS = [
+        'visible', 'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'review',
+    ];
+
+    /** @var string[] Fields stored in seconds and edited in minutes. */
+    public const MINUTEFIELDS = ['timelimit', 'graceperiod', 'delay1', 'delay2'];
+
+    /** @var string[] Editable columns of the quiz table. */
+    public const QUIZFIELDS = [
+        'password', 'subnet', 'delay1', 'delay2', 'timeopen', 'timeclose', 'timelimit', 'overduehandling', 'graceperiod',
+        'attempts', 'grademethod', 'navmethod', 'shuffleanswers', 'canredoquestions', 'attemptonlast',
+        'showuserpicture', 'decimalpoints', 'questiondecimalpoints', 'showblocks', ...self::REVIEWFIELDS,
+    ];
+
+    /** @var string[] All editable fields. visible is the course module's. */
     public const FIELDS = ['visible', ...self::QUIZFIELDS];
+
+    /**
+     * The table columns, in display order.
+     *
+     * @return string[]
+     */
+    public static function columns(): array {
+        return array_merge(...array_values(self::COLUMNGROUPS));
+    }
 
     /** @var int All review time bits. */
     protected const REVIEWBITS = display_options::DURING | display_options::IMMEDIATELY_AFTER |
@@ -114,6 +150,8 @@ class updater {
      */
     public static function choices(string $field): ?array {
         global $CFG;
+        require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+        $yesno = [0 => get_string('no'), 1 => get_string('yes')];
         switch ($field) {
             case 'visible':
                 return [
@@ -121,8 +159,22 @@ class updater {
                     0 => get_string('visible_hide', 'local_quizbulkedit'),
                 ];
             case 'grademethod':
-                require_once($CFG->dirroot . '/mod/quiz/locallib.php');
                 return quiz_get_grading_options();
+            case 'overduehandling':
+                return quiz_get_overdue_handling_options();
+            case 'navmethod':
+                return quiz_get_navigation_options();
+            case 'showuserpicture':
+                return quiz_get_user_image_options();
+            case 'decimalpoints':
+                return range(0, QUIZ_MAX_DECIMAL_OPTION);
+            case 'questiondecimalpoints':
+                return [-1 => get_string('sameasoverall', 'quiz')] + range(0, QUIZ_MAX_Q_DECIMAL_OPTION);
+            case 'shuffleanswers':
+            case 'canredoquestions':
+            case 'attemptonlast':
+            case 'showblocks':
+                return $yesno;
         }
         return null;
     }
@@ -144,17 +196,16 @@ class updater {
                 $dt = new DateTime('@' . $value);
                 $dt->setTimezone(core_date::get_user_timezone_object());
                 return $dt->format('Y-m-d\TH:i');
-            case 'timelimit':
-                return (string) round($value / MINSECS, 2);
-            case 'attempts':
-            case 'grademethod':
-            case 'visible':
-                return (string) (int) $value;
-            default:
-                if (in_array($field, self::REVIEWFIELDS)) {
-                    return (string) (int) $value;
-                }
+            case 'password':
+            case 'subnet':
+            case 'overduehandling':
+            case 'navmethod':
                 return (string) $value;
+            default:
+                if (in_array($field, self::MINUTEFIELDS)) {
+                    return (string) round($value / MINSECS, 2);
+                }
+                return (string) (int) $value;
         }
     }
 
@@ -175,10 +226,22 @@ class updater {
         }
         $choices = self::choices($field);
         if ($choices !== null) {
-            if ($input === '' || !array_key_exists($input, $choices)) {
+            // Return the key itself, so it keeps its type (int, or string like 'autosubmit').
+            foreach (array_keys($choices) as $key) {
+                if ((string) $key === $input) {
+                    return $key;
+                }
+            }
+            return null;
+        }
+        if (in_array($field, self::MINUTEFIELDS)) {
+            if ($input === '') {
+                return 0;
+            }
+            if (!is_numeric($input) || $input < 0) {
                 return null;
             }
-            return (int) $input;
+            return (int) round($input * MINSECS);
         }
         switch ($field) {
             case 'timeopen':
@@ -191,14 +254,6 @@ class updater {
                     return null;
                 }
                 return $dt->getTimestamp();
-            case 'timelimit':
-                if ($input === '') {
-                    return 0;
-                }
-                if (!is_numeric($input) || $input < 0) {
-                    return null;
-                }
-                return (int) round($input * MINSECS);
             case 'attempts':
                 if ($input === '') {
                     return 0;
@@ -282,6 +337,16 @@ class updater {
                 }
             }
 
+            if (isset($changes[$quizid]['overduehandling']) || isset($changes[$quizid]['graceperiod'])) {
+                // As the quiz settings form: a grace period must be longer than the site minimum.
+                $handling = $changes[$quizid]['overduehandling'] ?? $quiz->overduehandling;
+                $grace = $changes[$quizid]['graceperiod'] ?? $quiz->graceperiod;
+                $min = (int) get_config('quiz', 'graceperiodmin');
+                if ($handling === 'graceperiod' && $grace <= $min && empty($errors[$quizid]['graceperiod'])) {
+                    $errors[$quizid]['graceperiod'] = get_string('graceperiodtoosmall', 'quiz', format_time($min));
+                }
+            }
+
             if (isset($changes[$quizid]['timeopen']) || isset($changes[$quizid]['timeclose'])) {
                 $open = $changes[$quizid]['timeopen'] ?? $quiz->timeopen;
                 $close = $changes[$quizid]['timeclose'] ?? $quiz->timeclose;
@@ -342,6 +407,9 @@ class updater {
         if (in_array($field, self::REVIEWFIELDS)) {
             return 'errorreview';
         }
+        if (in_array($field, self::MINUTEFIELDS)) {
+            return 'errorminutes';
+        }
         if (self::choices($field) !== null) {
             return 'errorchoice';
         }
@@ -394,7 +462,10 @@ class updater {
             if ($old->timeopen != $quiz->timeopen || $old->timeclose != $quiz->timeclose) {
                 quiz_update_events($quiz);
             }
-            if ($old->timelimit != $quiz->timelimit || $old->timeclose != $quiz->timeclose) {
+            if (
+                $old->timelimit != $quiz->timelimit || $old->timeclose != $quiz->timeclose ||
+                $old->graceperiod != $quiz->graceperiod || $old->overduehandling != $quiz->overduehandling
+            ) {
                 quiz_update_open_attempts(['quizid' => $quiz->id]);
             }
             if ($old->grademethod != $quiz->grademethod) {

@@ -26,8 +26,10 @@
         "sesskey": "abc",
         "hasrows": true,
         "colspan": 4,
+        "defaultcolumns": "visible,password",
+        "groups": [{"label": "General", "columns": [{"field": "visible", "label": "Visibility", "checked": true}]}],
         "filter": "",
-        "reviewtimes": [{"label": "During the attempt"}, {"label": "Immediately after the attempt"}],
+        "reviewgrid": "{}",
         "fields": [
             {"field": "password", "label": "Password", "hint": null, "isselect": false, "type": "text", "value": ""},
             {"field": "visible", "label": "Visibility", "hint": null, "isselect": true,
@@ -42,9 +44,6 @@
                  "label": "Visibility: Quiz 1", "disabled": false,
                  "options": [{"value": "1", "label": "Shown", "selected": true}]}
             ],
-            "review": [{"label": "The attempt", "cells": [
-                {"field": "reviewattempt", "bit": 65536, "on": true, "changed": false, "id": "x1", "label": "The attempt (During)"}
-            ]}],
             "reviewopen": false,
             "unusedduring": "reviewcorrectness"
         }]
@@ -59,6 +58,34 @@
     <input type="search" id="local_quizbulkedit_filter" class="form-control w-auto" value="{{filter}}"
            data-action="filter" placeholder="{{#str}} filterplaceholder, local_quizbulkedit {{/str}}">
     <span class="text-muted small" data-region="filtercount" aria-live="polite"></span>
+    <div class="form-check form-switch mb-0 ms-2">
+        <input type="checkbox" class="form-check-input" id="local_quizbulkedit_changedonly" data-action="changedonly">
+        <label for="local_quizbulkedit_changedonly" class="form-check-label">{{#str}} changedonly, local_quizbulkedit {{/str}}</label>
+    </div>
+    <div class="dropdown ms-auto">
+        <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                data-bs-auto-close="outside" aria-expanded="false" id="local_quizbulkedit_columnsbtn">
+            {{#str}} columns, local_quizbulkedit {{/str}}
+        </button>
+        <div class="dropdown-menu dropdown-menu-end p-3 local-quizbulkedit-columns" aria-labelledby="local_quizbulkedit_columnsbtn"
+             data-region="columns" data-default="{{defaultcolumns}}">
+            {{#groups}}
+            <fieldset class="mb-2">
+                <legend class="fs-6 fw-bold mb-1">{{label}}</legend>
+                {{#columns}}
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="local_quizbulkedit_col_{{field}}"
+                           data-column="{{field}}"{{#checked}} checked{{/checked}}>
+                    <label for="local_quizbulkedit_col_{{field}}" class="form-check-label">{{label}}</label>
+                </div>
+                {{/columns}}
+            </fieldset>
+            {{/groups}}
+            <button type="button" class="btn btn-link btn-sm p-0" data-action="defaultcolumns">
+                {{#str}} columnsdefault, local_quizbulkedit {{/str}}
+            </button>
+        </div>
+    </div>
 </div>
 <form method="post" action="{{actionurl}}" id="local_quizbulkedit_form" data-region="local_quizbulkedit">
     <input type="hidden" name="id" value="{{courseid}}">
@@ -71,7 +98,7 @@
                 <label for="local_quizbulkedit_field" class="form-label mb-1">{{#str}} field, local_quizbulkedit {{/str}}</label>
                 <select id="local_quizbulkedit_field" class="form-select" data-action="bulkfield">
                     {{#fields}}
-                        <option value="{{field}}">{{label}}</option>
+                        <option value="{{field}}"{{#colhidden}} hidden{{/colhidden}}>{{label}}</option>
                     {{/fields}}
                 </select>
             </div>
@@ -102,16 +129,17 @@
     </div>
 
     <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle generaltable">
+        <table class="table table-sm table-hover align-middle generaltable local-quizbulkedit-table"
+               data-reviewgrid="{{reviewgrid}}">
             <thead>
                 <tr>
-                    <th scope="col">
+                    <th scope="col" class="local-quizbulkedit-sticky1">
                         <input type="checkbox" class="form-check-input" data-action="selectall" id="local_quizbulkedit_all">
                         <label for="local_quizbulkedit_all" class="visually-hidden">{{#str}} selectall, local_quizbulkedit {{/str}}</label>
                     </th>
-                    <th scope="col">{{#str}} quiz, local_quizbulkedit {{/str}}</th>
+                    <th scope="col" class="local-quizbulkedit-sticky2">{{#str}} quiz, local_quizbulkedit {{/str}}</th>
                     {{#fields}}
-                    <th scope="col">
+                    <th scope="col" data-col="{{field}}"{{#colhidden}} hidden{{/colhidden}}>
                         {{label}}
                         {{#hint}}<div class="small fw-normal text-muted">{{.}}</div>{{/hint}}
                         {{#isreview}}
@@ -126,18 +154,18 @@
             <tbody>
                 {{#rows}}
                 <tr data-quizid="{{quizid}}" data-search="{{name}} {{section}}">
-                    <td>
+                    <td class="local-quizbulkedit-sticky1">
                         <input type="checkbox" class="form-check-input" data-action="select" id="local_quizbulkedit_sel{{quizid}}">
                         <label for="local_quizbulkedit_sel{{quizid}}" class="visually-hidden">{{#str}} select, local_quizbulkedit, {{name}} {{/str}}</label>
                     </td>
-                    <td>
+                    <td class="local-quizbulkedit-sticky2">
                         <a href="{{url}}" class="{{#hidden}}text-muted{{/hidden}}">{{name}}</a>
                         <a href="{{editurl}}" class="ms-1" title="{{#str}} editsettings, local_quizbulkedit, {{name}} {{/str}}"
                            aria-label="{{#str}} editsettings, local_quizbulkedit, {{name}} {{/str}}">{{#pix}} i/settings, core {{/pix}}</a>
                         <div class="small text-muted">{{section}}</div>
                     </td>
                     {{#cells}}
-                    <td class="{{#changed}}table-warning{{/changed}}" data-cell="{{field}}">
+                    <td class="{{#changed}}table-warning{{/changed}}" data-cell="{{field}}" data-col="{{field}}"{{#colhidden}} hidden{{/colhidden}}>
                         {{#isreview}}
                         {{#reviewinputs}}
                         <input type="hidden" name="o[{{quizid}}][{{field}}]" value="{{original}}">
@@ -186,31 +214,8 @@
                 <tr id="local_quizbulkedit_review{{quizid}}" data-reviewfor="{{quizid}}" data-unusedduring="{{unusedduring}}"
                     {{^reviewopen}}hidden{{/reviewopen}}>
                     <td></td>
-                    <td colspan="{{colspan}}">
-                        <table class="table table-sm table-bordered w-auto mb-1 small">
-                            <caption class="caption-top pb-1">{{#str}} reviewfor, local_quizbulkedit, {{name}} {{/str}}</caption>
-                            <thead>
-                                <tr>
-                                    <td></td>
-                                    {{#reviewtimes}}<th scope="col" class="text-center">{{label}}</th>{{/reviewtimes}}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {{#review}}
-                                <tr>
-                                    <th scope="row" class="fw-normal">{{label}}</th>
-                                    {{#cells}}
-                                    <td class="text-center{{#changed}} table-warning{{/changed}}">
-                                        <input type="checkbox" class="form-check-input" id="{{id}}"
-                                               data-reviewfield="{{field}}" data-bit="{{bit}}"{{#on}} checked{{/on}}>
-                                        <label for="{{id}}" class="visually-hidden">{{label}}</label>
-                                    </td>
-                                    {{/cells}}
-                                </tr>
-                                {{/review}}
-                            </tbody>
-                        </table>
-                    </td>
+                    {{! Filled in by JS when first shown, to keep big courses' pages light. }}
+                    <td colspan="{{colspan}}" data-region="reviewdetail"></td>
                 </tr>
                 {{/rows}}
             </tbody>

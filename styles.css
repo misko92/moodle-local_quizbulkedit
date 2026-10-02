@@ -1,0 +1,41 @@
+/* Keep the select box and quiz name in view while scrolling a wide table sideways. */
+.local-quizbulkedit-table .local-quizbulkedit-sticky1,
+.local-quizbulkedit-table .local-quizbulkedit-sticky2 {
+    position: sticky;
+    background-color: var(--bs-body-bg);
+    z-index: 2;
+}
+
+.local-quizbulkedit-table .local-quizbulkedit-sticky1 {
+    left: 0;
+    width: 2.25rem;
+    min-width: 2.25rem;
+}
+
+.local-quizbulkedit-table .local-quizbulkedit-sticky2 {
+    left: 2.25rem;
+    min-width: 12rem;
+    box-shadow: inset -1px 0 0 var(--bs-border-color);
+}
+
+.local-quizbulkedit-table td,
+.local-quizbulkedit-table th {
+    white-space: nowrap;
+}
+
+.local-quizbulkedit-table .local-quizbulkedit-sticky2,
+.local-quizbulkedit-table th {
+    white-space: normal;
+}
+
+.local-quizbulkedit-columns {
+    max-height: 70vh;
+    overflow-y: auto;
+    min-width: 18rem;
+}
+
+/* An open review grid stays in view however far the table is scrolled sideways. */
+.local-quizbulkedit-table [data-region="reviewdetail"] > table {
+    position: sticky;
+    left: 2.75rem;
+}

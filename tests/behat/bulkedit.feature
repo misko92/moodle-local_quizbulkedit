@@ -103,3 +103,32 @@ Feature: Bulk edit quiz settings
     And I click on "Show review options of Quiz C" "button"
     And I set the field "Copy review options to Quiz C from" to "Same as Quiz B"
     And the field "Right answer (Later, while the quiz is still open): Quiz C" matches value "0"
+
+  Scenario: Choose columns, and the choice is remembered
+    Given I am on the "Course 1" course page logged in as teacher1
+    When I navigate to "Bulk edit quizzes" in current page administration
+    Then "When time expires: Quiz A" "field" should not be visible
+    And I press "Columns"
+    And I click on "When time expires" "checkbox"
+    And I click on "Password" "checkbox"
+    And I press "Columns"
+    And "Password: Quiz A" "field" should not be visible
+    And I set the field "When time expires: Quiz A" to "Attempts must be submitted before time expires, or they are not counted"
+    And I press "Save changes"
+    And I should see "1 quiz(zes) updated."
+    # The column choice survives the reload.
+    And the field "When time expires: Quiz A" matches value "Attempts must be submitted before time expires, or they are not counted"
+    And "Password: Quiz A" "field" should not be visible
+    And I press "Columns"
+    And I press "Reset to default columns"
+    And "When time expires: Quiz A" "field" should not be visible
+    And "Password: Quiz A" "field" should be visible
+
+  Scenario: Show only the quizzes with unsaved changes
+    Given I am on the "Course 1" course page logged in as teacher1
+    When I navigate to "Bulk edit quizzes" in current page administration
+    And I set the field "Password: Quiz B" to "changed"
+    And I click on "Show changed quizzes only" "checkbox"
+    Then "Select Quiz A" "checkbox" should not be visible
+    And "Select Quiz C" "checkbox" should not be visible
+    And "Select Quiz B" "checkbox" should be visible

@@ -26,6 +26,8 @@
 import {getString} from 'core/str';
 import {add as addToast} from 'core/toast';
 import {watchFormById, markFormChangedFromNode} from 'core_form/changechecker';
+import Ajax from 'core/ajax';
+import Notification from 'core/notification';
 
 /** Characters for random passwords, without easily confused ones (0/O, 1/l/I). */
 const PASSWORD_CHARS = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -222,7 +224,61 @@ export const init = (formId) => {
         }
     };
     quizRows.forEach(syncReview);
+    const gridStrings = JSON.parse(form.querySelector('table[data-reviewgrid]').dataset.reviewgrid);
+    const fill = (pattern, values) => pattern.replace(/\{(\w+)\}/g, (match, key) => values[key] ?? match);
+
+    // Build a quiz's review options grid the first time it is shown.
+    const buildGrid = (row) => {
+        const cell = reviewRow(row).querySelector('[data-region="reviewdetail"]');
+        if (cell.firstChild) {
+            return;
+        }
+        const quiz = row.querySelector('.local-quizbulkedit-sticky2 a').textContent.trim();
+        const table = document.createElement('table');
+        table.className = 'table table-sm table-bordered w-auto mb-1 small';
+        table.createCaption().textContent = fill(gridStrings.caption, {quiz});
+        table.caption.className = 'caption-top pb-1';
+        const head = table.createTHead().insertRow();
+        head.appendChild(document.createElement('td'));
+        gridStrings.times.forEach((time) => {
+            const th = document.createElement('th');
+            th.scope = 'col';
+            th.className = 'text-center';
+            th.textContent = time.label;
+            head.appendChild(th);
+        });
+        const body = table.createTBody();
+        gridStrings.items.forEach((item) => {
+            const tr = body.insertRow();
+            const th = document.createElement('th');
+            th.scope = 'row';
+            th.className = 'fw-normal';
+            th.textContent = item.label;
+            tr.appendChild(th);
+            gridStrings.times.forEach((time) => {
+                const td = tr.insertCell();
+                td.className = 'text-center';
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.className = 'form-check-input';
+                box.id = `local_quizbulkedit_${row.dataset.quizid}_${item.field}_${time.key}`;
+                box.dataset.reviewfield = item.field;
+                box.dataset.bit = time.bit;
+                const label = document.createElement('label');
+                label.htmlFor = box.id;
+                label.className = 'visually-hidden';
+                label.textContent = fill(gridStrings.checkbox, {option: item.label, when: time.label, quiz});
+                td.append(box, label);
+            });
+        });
+        cell.appendChild(table);
+        syncReview(row);
+    };
+
     const setReviewOpen = (row, open) => {
+        if (open) {
+            buildGrid(row);
+        }
         reviewRow(row).hidden = !open || row.hidden;
         row.querySelector('[data-action="togglereview"]').setAttribute('aria-expanded', open ? 'true' : 'false');
     };
@@ -231,29 +287,77 @@ export const init = (formId) => {
     const filterInput = document.querySelector('[data-action="filter"]');
     const filterValue = form.querySelector('[data-region="filtervalue"]');
     const filterCount = document.querySelector('[data-region="filtercount"]');
+    const changedOnly = document.querySelector('[data-action="changedonly"]');
+    const rowChanged = (row) => [...row.querySelectorAll('[data-original]')]
+        .some((input) => input.value !== input.dataset.original);
     const applyFilter = async() => {
         const words = filterInput.value.toLowerCase().split(/\s+/).filter((word) => word.length);
         let shown = 0;
         quizRows.forEach((row) => {
             const text = row.dataset.search.toLowerCase();
-            row.hidden = !words.every((word) => text.includes(word));
+            row.hidden = !words.every((word) => text.includes(word)) || (changedOnly.checked && !rowChanged(row));
             setReviewOpen(row, isReviewOpen(row));
             shown += row.hidden ? 0 : 1;
         });
         filterValue.value = filterInput.value;
-        filterCount.textContent = words.length ?
+        filterCount.textContent = words.length || changedOnly.checked ?
             await getString('filtercount', 'local_quizbulkedit', {shown, total: quizRows.length}) : '';
         const boxes = rowBoxes();
         selectAll.checked = boxes.length > 0 && boxes.every((box) => box.checked);
         selectAll.indeterminate = !selectAll.checked && boxes.some((box) => box.checked);
     };
     filterInput.addEventListener('input', applyFilter);
+    changedOnly.addEventListener('change', applyFilter);
     filterInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
         }
     });
     applyFilter();
+
+    // Columns picker: show or hide columns, and remember the choice for next time.
+    const columnsMenu = document.querySelector('[data-region="columns"]');
+    const columnBoxes = [...columnsMenu.querySelectorAll('[data-column]')];
+    const applyColumns = () => {
+        const shown = columnBoxes.filter((box) => box.checked).map((box) => box.dataset.column);
+        form.querySelectorAll('[data-col]').forEach((cell) => {
+            cell.hidden = !shown.includes(cell.dataset.col);
+        });
+        form.querySelectorAll('[data-region="reviewdetail"]').forEach((cell) => {
+            cell.colSpan = shown.length + 1;
+        });
+        // The bulk toolbar only offers the columns on show.
+        [...fieldSelect.options].forEach((option) => {
+            option.hidden = !shown.includes(option.value);
+        });
+        if (fieldSelect.selectedOptions[0]?.hidden) {
+            const first = [...fieldSelect.options].find((option) => !option.hidden);
+            if (first) {
+                fieldSelect.value = first.value;
+            }
+            syncToolbar();
+        }
+        return shown;
+    };
+    // Uses the AJAX web service rather than the routed REST API, which needs web server rewrite rules.
+    const saveColumns = (shown) => Ajax.call([{
+        methodname: 'core_user_set_user_preferences',
+        args: {preferences: [{name: 'local_quizbulkedit_columns', value: shown.join(',')}]},
+    }])[0].catch(Notification.exception);
+    columnsMenu.addEventListener('change', (e) => {
+        if (e.target.dataset.column) {
+            saveColumns(applyColumns());
+        }
+    });
+    columnsMenu.querySelector('[data-action="defaultcolumns"]').addEventListener('click', () => {
+        const defaults = columnsMenu.dataset.default.split(',');
+        columnBoxes.forEach((box) => {
+            box.checked = defaults.includes(box.dataset.column);
+        });
+        applyColumns();
+        // An empty preference means "the defaults", so later default changes reach this user too.
+        saveColumns([]);
+    });
 
     form.addEventListener('click', (e) => {
         const toggle = e.target.closest('[data-action="togglereview"]');

@@ -4,17 +4,22 @@ Edit the settings of every quiz in a course on one page, instead of opening each
 
 In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the table, with these settings:
 
-| Setting | Notes |
-|---|---|
-| Visibility | Shown / Hidden. Needs `moodle/course:activityvisibility`. |
-| Password | |
-| Network address | "Require network address": comma-separated IPs, partial addresses (`10.1.`), ranges (`10.0.0.1-50`) or CIDR (`192.168.10.0/24`). Empty = any. |
-| Open / Close | Empty = no restriction. |
-| Time limit | In minutes, 0 = no limit. |
-| Attempts | 0 = unlimited. |
-| Grading method | Changing it regrades the quiz, like the normal settings form does. |
-| Review options | **Show** opens the quiz's review options grid to edit it (**Show all** in the header expands every quiz). The same rules as the quiz settings form apply: options grey out when they depend on another (marks need max marks; details need the attempt), when the question behaviour doesn't use them during the attempt, or (after close) when the quiz has no close date. "Copy from…" fills the grid from another quiz. |
+Pick the columns you want with **Columns** (grouped like the quiz settings form; remembered per user):
 
+| Group | Settings |
+|---|---|
+| General | Visibility (needs `moodle/course:activityvisibility`) |
+| Extra restrictions | Password; network address (comma-separated IPs, partial addresses, ranges or CIDR); enforced delays between attempts |
+| Timing | Open, close, time limit, when time expires, grace period (checked against the site minimum, as the settings form does) |
+| Grade | Attempts, grading method (changing it regrades) |
+| Layout | Navigation method |
+| Question behaviour | Shuffle within questions, allow redo within an attempt, each attempt builds on last |
+| Review options | **Show** opens an editable grid (**Show all** opens every quiz). The quiz settings form's rules apply: options grey out when they depend on another, when the question behaviour doesn't use them during the attempt, or (after close) when the quiz has no close date. "Copy from…" fills the grid from another quiz. |
+| Appearance | Show the user's picture, decimal places in grades and in question marks, show blocks |
+
+Times are entered in minutes. The quiz name and select box stay in view while scrolling a wide table sideways.
+
+- **Show changed quizzes only** narrows the list to quizzes with unsaved edits.
 - **Filter** by keyword (quiz or section name). Select all and Apply to selected only affect the quizzes shown; the filter is kept after saving.
 - Edit any cell, or tick quizzes and use the toolbar to **Apply to selected** a value for one setting.
 - **Random password for each selected** gives every ticked quiz its own random 6-character password.

@@ -84,12 +84,11 @@ class editor implements renderable, templatable {
             'subnet' => 'text',
             'timeopen' => 'datetime-local',
             'timeclose' => 'datetime-local',
-            'timelimit' => 'number',
             'attempts' => 'number',
-        ];
-        $hints = ['subnet', 'timelimit', 'attempts', 'review'];
-        // One column per field, except the review options, which share one column.
-        $columns = array_diff(updater::FIELDS, updater::REVIEWFIELDS);
+        ] + array_fill_keys(updater::MINUTEFIELDS, 'number');
+        $hints = ['subnet', 'timelimit', 'graceperiod', 'delay1', 'delay2', 'attempts', 'review'];
+        $columns = updater::columns();
+        $shown = array_flip($this->shown_columns());
 
         $copychoices = [];
         foreach ($this->quizzes as $quizid => ['cm' => $cm]) {
@@ -97,18 +96,31 @@ class editor implements renderable, templatable {
         }
 
         $fields = [];
-        foreach ([...$columns, 'review'] as $field) {
+        foreach ($columns as $field) {
             $fields[] = [
                 'field' => $field,
                 'label' => get_string($field, 'local_quizbulkedit'),
                 'hint' => in_array($field, $hints) ? get_string($field . '_hint', 'local_quizbulkedit') : null,
                 'isreview' => $field === 'review',
+                'colhidden' => !isset($shown[$field]),
             ] + $this->control(
                 $field,
                 $types[$field] ?? null,
                 $field === 'review' ? $copychoices : updater::choices($field),
                 ''
             );
+        }
+
+        $groups = [];
+        foreach (updater::COLUMNGROUPS as $group => $groupcolumns) {
+            $groups[] = [
+                'label' => get_string('group_' . $group, 'local_quizbulkedit'),
+                'columns' => array_map(fn($field) => [
+                    'field' => $field,
+                    'label' => get_string($field, 'local_quizbulkedit'),
+                    'checked' => isset($shown[$field]),
+                ], $groupcolumns),
+            ];
         }
 
         $rows = [];
@@ -120,42 +132,32 @@ class editor implements renderable, templatable {
                 $originals[$field] = $this->original[$quizid][$field] ?? updater::format_value($field, $quiz->$field);
                 $values[$field] = $this->submitted[$quizid][$field] ?? $originals[$field];
             }
+            $reviewchanged = false;
+            foreach (updater::REVIEWFIELDS as $field) {
+                $reviewchanged = $reviewchanged || $values[$field] !== $originals[$field];
+            }
+            $reviewerrors = array_intersect_key($this->errors[$quizid] ?? [], array_flip(updater::REVIEWFIELDS));
 
             $cells = [];
             foreach ($columns as $field) {
+                if ($field === 'review') {
+                    $cells[] = $this->review_cell($quizid, $name, $values, $originals, $copychoices, $reviewerrors) + [
+                        'changed' => $reviewchanged,
+                        'colhidden' => !isset($shown[$field]),
+                    ];
+                    continue;
+                }
                 $cells[] = [
                     'field' => $field,
                     'original' => $originals[$field],
                     'changed' => $values[$field] !== $originals[$field],
                     'error' => $this->errors[$quizid][$field] ?? null,
                     'label' => get_string($field, 'local_quizbulkedit') . ': ' . $name,
+                    'colhidden' => !isset($shown[$field]),
                     'disabled' => $field === 'visible' &&
                         !has_capability('moodle/course:activityvisibility', $cm->context),
                 ] + $this->control($field, $types[$field] ?? null, updater::choices($field), $values[$field]);
             }
-
-            $reviewinputs = [];
-            $reviewchanged = false;
-            foreach (updater::REVIEWFIELDS as $field) {
-                $reviewinputs[] = ['field' => $field, 'value' => $values[$field], 'original' => $originals[$field]];
-                $reviewchanged = $reviewchanged || $values[$field] !== $originals[$field];
-            }
-            $reviewerrors = array_intersect_key($this->errors[$quizid] ?? [], array_flip(updater::REVIEWFIELDS));
-            $copyoptions = [['value' => '', 'label' => get_string('reviewcopyfrom', 'local_quizbulkedit')]];
-            foreach ($copychoices as $otherid => $label) {
-                if ($otherid != $quizid) {
-                    $copyoptions[] = ['value' => $otherid, 'label' => $label];
-                }
-            }
-            $cells[] = [
-                'field' => 'review',
-                'isreview' => true,
-                'changed' => $reviewchanged,
-                'error' => $reviewerrors ? reset($reviewerrors) : null,
-                'reviewinputs' => $reviewinputs,
-                'copyoptions' => $copyoptions,
-                'copylabel' => get_string('reviewcopyfor', 'local_quizbulkedit', $name),
-            ];
 
             $rows[] = [
                 'quizid' => $quizid,
@@ -165,7 +167,6 @@ class editor implements renderable, templatable {
                 'section' => get_section_name($cm->get_course(), $cm->sectionnum),
                 'hidden' => !$cm->visible,
                 'cells' => $cells,
-                'review' => $this->review_grid($quizid, $name, $values, $originals),
                 'reviewopen' => $reviewchanged || $reviewerrors,
                 'unusedduring' => implode(' ', $this->unused_during($quiz->preferredbehaviour)),
             ];
@@ -176,49 +177,104 @@ class editor implements renderable, templatable {
             'courseid' => $this->courseid,
             'sesskey' => sesskey(),
             'fields' => $fields,
+            'groups' => $groups,
+            'defaultcolumns' => implode(',', updater::DEFAULTCOLUMNS),
             'rows' => $rows,
             'hasrows' => !empty($rows),
-            'colspan' => count($fields) + 1,
+            'colspan' => count($shown) + 1,
             'filter' => $this->filter,
-            'reviewtimes' => array_map(
-                fn($time) => ['label' => get_string('review' . $time, 'quiz')],
-                array_keys(self::REVIEWTIMES)
-            ),
+            'reviewgrid' => json_encode($this->review_grid_strings()),
         ];
     }
 
     /**
-     * Template data for the grid of a quiz's review option checkboxes.
+     * The columns to show: the user's choice, plus any with an error or unsaved change to redisplay.
+     *
+     * @return string[]
+     */
+    protected function shown_columns(): array {
+        $columns = updater::columns();
+        $pref = get_user_preferences('local_quizbulkedit_columns', '');
+        $shown = $pref === '' ? updater::DEFAULTCOLUMNS : array_intersect($columns, explode(',', $pref));
+        foreach ([$this->errors, $this->submitted] as $byquiz) {
+            foreach ($byquiz as $quizid => $fields) {
+                foreach (array_keys($fields) as $field) {
+                    $original = $this->original[$quizid][$field] ?? null;
+                    if ($byquiz === $this->submitted && $fields[$field] === $original) {
+                        continue;
+                    }
+                    $shown[] = in_array($field, updater::REVIEWFIELDS) ? 'review' : $field;
+                }
+            }
+        }
+        // Keep display order.
+        return array_values(array_intersect($columns, $shown));
+    }
+
+    /**
+     * Template data for the review options cell: hidden values, copy drop-down and Show button.
      *
      * @param int $quizid
      * @param string $name formatted quiz name
      * @param array $values field => current value string
      * @param array $originals field => original value string
-     * @return array rows of [label, cells => [field, bit, on, changed, id, label]]
+     * @param array $copychoices quiz id => "Same as ..." label
+     * @param array $reviewerrors review field => error message
+     * @return array
      */
-    protected function review_grid(int $quizid, string $name, array $values, array $originals): array {
+    protected function review_cell(
+        int $quizid,
+        string $name,
+        array $values,
+        array $originals,
+        array $copychoices,
+        array $reviewerrors
+    ): array {
+        $reviewinputs = [];
+        foreach (updater::REVIEWFIELDS as $field) {
+            $reviewinputs[] = ['field' => $field, 'value' => $values[$field], 'original' => $originals[$field]];
+        }
+        $copyoptions = [['value' => '', 'label' => get_string('reviewcopyfrom', 'local_quizbulkedit')]];
+        foreach ($copychoices as $otherid => $label) {
+            if ($otherid != $quizid) {
+                $copyoptions[] = ['value' => $otherid, 'label' => $label];
+            }
+        }
+        return [
+            'field' => 'review',
+            'isreview' => true,
+            'error' => $reviewerrors ? reset($reviewerrors) : null,
+            'reviewinputs' => $reviewinputs,
+            'copyoptions' => $copyoptions,
+            'copylabel' => get_string('reviewcopyfor', 'local_quizbulkedit', $name),
+        ];
+    }
+
+    /**
+     * Labels for the review option grids, which JS builds when first shown.
+     *
+     * @return array
+     */
+    protected function review_grid_strings(): array {
+        $times = [];
+        foreach (self::REVIEWTIMES as $time => $bit) {
+            $times[] = ['key' => $time, 'bit' => $bit, 'label' => get_string('review' . $time, 'quiz')];
+        }
         $items = [];
         foreach (self::REVIEWITEMS as $field => [$identifier, $component]) {
-            $option = get_string($identifier, $component);
-            $cells = [];
-            foreach (self::REVIEWTIMES as $time => $bit) {
-                $on = (bool) ((int) $values[$field] & $bit);
-                $cells[] = [
-                    'field' => $field,
-                    'bit' => $bit,
-                    'on' => $on,
-                    'changed' => $on !== (bool) ((int) $originals[$field] & $bit),
-                    'id' => "local_quizbulkedit_{$quizid}_{$field}_{$time}",
-                    'label' => get_string('reviewcheckbox', 'local_quizbulkedit', (object) [
-                        'option' => $option,
-                        'when' => get_string('review' . $time, 'quiz'),
-                        'quiz' => $name,
-                    ]),
-                ];
-            }
-            $items[] = ['label' => $option, 'cells' => $cells];
+            $items[] = ['field' => $field, 'label' => get_string($identifier, $component)];
         }
-        return $items;
+        return [
+            'times' => $times,
+            'items' => $items,
+            // Patterns: JS fills in the {...} placeholders.
+            'caption' => get_string('reviewfor', 'local_quizbulkedit', '{quiz}'),
+            'checkbox' => get_string(
+                'reviewcheckbox',
+                'local_quizbulkedit',
+                (object) ['option' => '{option}', 'when' => '{when}', 'quiz' => '{quiz}']
+            ),
+        ];
     }
 
     /**
@@ -260,7 +316,7 @@ class editor implements renderable, templatable {
             'type' => $type,
             'value' => $value,
             'isnumber' => $type === 'number',
-            'step' => $field === 'timelimit' ? 'any' : '1',
+            'step' => in_array($field, updater::MINUTEFIELDS) ? 'any' : '1',
         ];
     }
 }

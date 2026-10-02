@@ -49,3 +49,19 @@ function local_quizbulkedit_extend_navigation_course(
         new pix_icon('i/settings', '')
     );
 }
+
+/**
+ * User preferences this plugin may set from JavaScript.
+ *
+ * @return array[]
+ */
+function local_quizbulkedit_user_preferences(): array {
+    return [
+        'local_quizbulkedit_columns' => [
+            'type' => PARAM_TEXT,
+            'null' => NULL_NOT_ALLOWED,
+            'default' => '',
+            'permissioncallback' => [core_user::class, 'is_current_user'],
+        ],
+    ];
+}
