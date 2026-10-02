@@ -156,3 +156,21 @@ Feature: Bulk edit quiz settings
     And the field "Grade to pass: Unit 1 test" matches value "12"
     And I am on the "Unit 1 test" "quiz activity editing" page
     And the field "Grade to pass" matches value "12.00"
+
+  Scenario: Copy Safe Exam Browser settings, and turn them off
+    Given I am on the "Quiz A" "quiz activity editing" page logged in as teacher1
+    And I expand all fieldsets
+    And I set the field "Require the use of Safe Exam Browser" to "Yes – Use SEB client config"
+    And I press "Save and return to course"
+    When I navigate to "Bulk edit quizzes" in current page administration
+    Then the field "Safe Exam Browser: Quiz A" matches value "Yes – Use SEB client config"
+    And I set the field "Safe Exam Browser: Quiz B" to "Same as Quiz A (Yes – Use SEB client config)"
+    And I press "Save changes"
+    And I should see "1 quiz(zes) updated."
+    And the field "Safe Exam Browser: Quiz B" matches value "Yes – Use SEB client config"
+    And I set the field "Safe Exam Browser: Quiz A" to "No"
+    And I press "Save changes"
+    And the field "Safe Exam Browser: Quiz A" matches value "No"
+    And I am on the "Quiz B" "quiz activity editing" page
+    And I expand all fieldsets
+    And the field "Require the use of Safe Exam Browser" matches value "Yes – Use SEB client config"

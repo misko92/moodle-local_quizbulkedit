@@ -206,6 +206,7 @@
                                {{#isnumber}}min="0" step="{{step}}" style="width: 6em"{{/isnumber}}
                                {{#error}}aria-invalid="true"{{/error}}>
                         {{/isselect}}
+                        {{#note}}<div class="small text-muted">{{.}}</div>{{/note}}
                         {{#error}}<div class="invalid-feedback">{{.}}</div>{{/error}}
                         {{/isreview}}
                     </td>

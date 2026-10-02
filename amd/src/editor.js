@@ -168,7 +168,9 @@ export const init = (formId) => {
                 return;
             }
             const control = row.querySelector(`[data-field="${field}"]`);
-            if (!control.disabled) {
+            // E.g. a quiz can't copy SEB settings from itself, so that option is missing from its own list.
+            const allowed = control.tagName !== 'SELECT' || [...control.options].some((option) => option.value === value);
+            if (!control.disabled && allowed) {
                 setValue(control, value);
                 if (field === 'timeclose') {
                     syncReview(row);

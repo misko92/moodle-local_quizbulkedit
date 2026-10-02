@@ -16,6 +16,7 @@
 
 namespace local_quizbulkedit\output;
 
+use local_quizbulkedit\local\seb;
 use local_quizbulkedit\local\updater;
 use mod_quiz\question\display_options;
 use moodle_url;
@@ -94,9 +95,14 @@ class editor implements renderable, templatable {
         $shown = array_flip($this->shown_columns());
 
         $copychoices = [];
-        foreach ($this->quizzes as $quizid => ['cm' => $cm]) {
+        $sebchoices = ['0' => get_string('no')];
+        foreach ($this->quizzes as $quizid => ['cm' => $cm, 'quiz' => $quiz]) {
             $copychoices[$quizid] = get_string('reviewcopy', 'local_quizbulkedit', $cm->get_formatted_name());
+            if ($quiz->seb) {
+                $sebchoices['q' . $quizid] = $copychoices[$quizid] . ' (' . seb::describe($quiz) . ')';
+            }
         }
+        $toolbarchoices = ['review' => $copychoices, seb::FIELD => $sebchoices];
 
         $fields = [];
         foreach ($columns as $field) {
@@ -109,13 +115,13 @@ class editor implements renderable, templatable {
             ] + $this->control(
                 $field,
                 $types[$field] ?? null,
-                $field === 'review' ? $copychoices : updater::choices($field),
+                $toolbarchoices[$field] ?? updater::choices($field),
                 ''
             );
         }
 
         $groups = [];
-        foreach (updater::COLUMNGROUPS as $group => $groupcolumns) {
+        foreach (updater::column_groups() as $group => $groupcolumns) {
             $groups[] = [
                 'label' => get_string('group_' . $group, 'local_quizbulkedit'),
                 'columns' => array_map(fn($field) => [
@@ -146,6 +152,17 @@ class editor implements renderable, templatable {
                 if ($field === 'review') {
                     $cells[] = $this->review_cell($quizid, $name, $values, $originals, $copychoices, $reviewerrors) + [
                         'changed' => $reviewchanged,
+                        'colhidden' => !isset($shown[$field]),
+                    ];
+                    continue;
+                }
+                if ($field === seb::FIELD) {
+                    $cells[] = $this->seb_cell($quizid, $quiz, $sebchoices, $values[$field], $originals[$field]) + [
+                        'field' => $field,
+                        'original' => $originals[$field],
+                        'changed' => $values[$field] !== $originals[$field],
+                        'error' => $this->errors[$quizid][$field] ?? null,
+                        'label' => get_string($field, 'local_quizbulkedit') . ': ' . $name,
                         'colhidden' => !isset($shown[$field]),
                     ];
                     continue;
@@ -212,6 +229,33 @@ class editor implements renderable, templatable {
         }
         // Keep display order.
         return array_values(array_intersect($columns, $shown));
+    }
+
+    /**
+     * Template data for a quiz's Safe Exam Browser drop-down.
+     *
+     * The first option keeps the current setup; the others turn it off or copy another quiz's.
+     *
+     * @param int $quizid
+     * @param \stdClass $quiz with the SEB fields from seb::load()
+     * @param array $sebchoices value => label for every quiz using SEB, plus '0' for off
+     * @param string $value current value
+     * @param string $original value originally shown (the current SEB mode)
+     * @return array
+     */
+    protected function seb_cell(int $quizid, \stdClass $quiz, array $sebchoices, string $value, string $original): array {
+        $choices = [$original => seb::describe($quiz)] + $sebchoices;
+        unset($choices['q' . $quizid]);
+        $options = [];
+        foreach ($choices as $optvalue => $label) {
+            $options[] = ['value' => $optvalue, 'label' => $label, 'selected' => (string) $optvalue === $value];
+        }
+        return [
+            'isselect' => true,
+            'options' => $options,
+            'disabled' => $quiz->seblocked || !$quiz->sebcanedit,
+            'note' => $quiz->seblocked ? get_string('seblocked', 'local_quizbulkedit') : null,
+        ];
     }
 
     /**

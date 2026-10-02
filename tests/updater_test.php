@@ -452,4 +452,83 @@ final class updater_test extends \advanced_testcase {
         [, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
         $this->assertArrayHasKey('gradepass', $errors[$quiz1->id]);
     }
+
+    /**
+     * Turn on SEB for a quiz.
+     *
+     * @param \stdClass $quiz
+     * @param int $mode settings_provider::USE_SEB_ constant
+     */
+    private function enable_seb(\stdClass $quiz, int $mode): void {
+        global $CFG;
+        $cm = get_coursemodule_from_instance('quiz', $quiz->id);
+        if ($mode === \quizaccess_seb\settings_provider::USE_SEB_UPLOAD_CONFIG) {
+            get_file_storage()->create_file_from_string([
+                'contextid' => \context_module::instance($cm->id)->id, 'component' => 'quizaccess_seb',
+                'filearea' => 'filemanager_sebconfigfile', 'itemid' => 0, 'filepath' => '/', 'filename' => 'exam.seb',
+            ], file_get_contents($CFG->dirroot . '/mod/quiz/accessrule/seb/tests/fixtures/unencrypted.seb'));
+        }
+        (new \quizaccess_seb\seb_quiz_settings(0, (object) [
+            'quizid' => $quiz->id, 'cmid' => $cm->id, 'requiresafeexambrowser' => $mode,
+        ]))->save();
+    }
+
+    public function test_seb_copy_and_turn_off(): void {
+        global $DB;
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        $quiz3 = $this->getDataGenerator()->get_plugin_generator('mod_quiz')->create_instance(['course' => $course->id]);
+        $this->setAdminUser();
+        $this->enable_seb($quiz1, \quizaccess_seb\settings_provider::USE_SEB_UPLOAD_CONFIG);
+        $this->enable_seb($quiz3, \quizaccess_seb\settings_provider::USE_SEB_CLIENT_CONFIG);
+
+        $quizzes = updater::get_quizzes($course);
+        $this->assertEquals(\quizaccess_seb\settings_provider::USE_SEB_UPLOAD_CONFIG, $quizzes[$quiz1->id]['quiz']->seb);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz2->id]['seb'] = 'q' . $quiz1->id;
+        $submitted[$quiz3->id]['seb'] = '0';
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame([], $errors);
+        updater::apply($course, $changes);
+
+        // Quiz 2 now has quiz 1's uploaded config, with its own copy of the file.
+        $copy = \quizaccess_seb\seb_quiz_settings::get_by_quiz_id($quiz2->id);
+        $this->assertEquals(\quizaccess_seb\settings_provider::USE_SEB_UPLOAD_CONFIG, $copy->get('requiresafeexambrowser'));
+        $cm2 = get_coursemodule_from_instance('quiz', $quiz2->id);
+        $this->assertNotNull(\quizaccess_seb\settings_provider::get_module_context_sebconfig_file($cm2->id));
+        // SEB writes each quiz's own start address into the config, so it opens the right quiz.
+        $this->assertStringContainsString('/mod/quiz/view.php?id=' . $cm2->id, $copy->get_config());
+        $this->assertNotEmpty($copy->get_config_key());
+        // Quiz 3 no longer uses SEB.
+        $this->assertFalse(\quizaccess_seb\seb_quiz_settings::get_by_quiz_id($quiz3->id));
+        $this->assertFalse($DB->record_exists('quizaccess_seb_quizsettings', ['quizid' => $quiz3->id]));
+    }
+
+    public function test_seb_validation(): void {
+        global $DB;
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        $quiz3 = $this->getDataGenerator()->get_plugin_generator('mod_quiz')->create_instance(['course' => $course->id]);
+        $this->setAdminUser();
+        $this->enable_seb($quiz1, \quizaccess_seb\settings_provider::USE_SEB_CLIENT_CONFIG);
+        // Quiz 3 has an attempt, so its SEB settings are locked.
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $DB->insert_record('quiz_attempts', ['quiz' => $quiz3->id, 'userid' => $student->id, 'attempt' => 1,
+            'uniqueid' => 999999, 'layout' => '', 'currentpage' => 0, 'preview' => 0, 'state' => 'inprogress',
+            'timestart' => time(), 'timefinish' => 0, 'timemodified' => time(), 'timemodifiedoffline' => 0,
+            'timecheckstate' => null, 'sumgrades' => null]);
+
+        $quizzes = updater::get_quizzes($course);
+        $this->assertTrue($quizzes[$quiz3->id]['quiz']->seblocked);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['seb'] = 'q' . $quiz1->id;
+        $submitted[$quiz2->id]['seb'] = 'q' . $quiz3->id;
+        $submitted[$quiz3->id]['seb'] = 'q' . $quiz1->id;
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame([], $changes);
+        // Itself, and a quiz without SEB, aren't valid sources; quiz 3 is locked.
+        $this->assertArrayHasKey('seb', $errors[$quiz1->id]);
+        $this->assertArrayHasKey('seb', $errors[$quiz2->id]);
+        $this->assertSame(get_string('errorseblocked', 'local_quizbulkedit'), $errors[$quiz3->id]['seb']);
+    }
 }

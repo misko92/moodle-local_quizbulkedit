@@ -55,7 +55,7 @@ class updater {
      */
     public const COLUMNGROUPS = [
         'general' => ['name', 'visible'],
-        'restrictions' => ['password', 'subnet', 'delay1', 'delay2'],
+        'restrictions' => ['password', 'subnet', 'seb', 'delay1', 'delay2'],
         'timing' => ['timeopen', 'timeclose', 'timelimit', 'overduehandling', 'graceperiod'],
         'grade' => ['grade', 'gradepass', 'attempts', 'grademethod'],
         'layout' => ['navmethod'],
@@ -66,7 +66,7 @@ class updater {
 
     /** @var string[] Columns shown until the user picks their own. */
     public const DEFAULTCOLUMNS = [
-        'visible', 'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'review',
+        'visible', 'password', 'subnet', 'seb', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'review',
     ];
 
     /** @var string[] Fields stored in seconds and edited in minutes. */
@@ -80,7 +80,7 @@ class updater {
     ];
 
     /** @var string[] Fields saved through their own core API rather than written to the quiz table. */
-    public const SPECIALFIELDS = ['name', 'visible', 'grade', 'gradepass'];
+    public const SPECIALFIELDS = ['name', 'visible', 'grade', 'gradepass', 'seb'];
 
     /** @var string[] All editable fields. */
     public const FIELDS = [...self::SPECIALFIELDS, ...self::QUIZFIELDS];
@@ -94,7 +94,20 @@ class updater {
      * @return string[]
      */
     public static function columns(): array {
-        return array_merge(...array_values(self::COLUMNGROUPS));
+        return array_merge(...array_values(self::column_groups()));
+    }
+
+    /**
+     * The table columns by group, leaving out those not available on this site.
+     *
+     * @return array group => column names
+     */
+    public static function column_groups(): array {
+        $groups = self::COLUMNGROUPS;
+        if (!seb::available()) {
+            $groups['restrictions'] = array_values(array_diff($groups['restrictions'], [seb::FIELD]));
+        }
+        return $groups;
     }
 
     /** @var int All review time bits. */
@@ -154,6 +167,7 @@ class updater {
                 $quizzes[$quizid] = ['cm' => $cm, 'quiz' => $quiz];
             }
         }
+        seb::load($quizzes);
         return $quizzes;
     }
 
@@ -336,6 +350,15 @@ class updater {
                 $input = (string) $fields[$field];
                 $orig = (string) ($original[$quizid][$field] ?? self::format_value($field, $quiz->$field));
                 if ($input === $orig) {
+                    continue;
+                }
+                if ($field === seb::FIELD) {
+                    [$value, $error] = seb::validate($quizid, $input, $quizzes);
+                    if ($error !== null) {
+                        $errors[$quizid][$field] = $error;
+                    } else if ($value !== (string) $quiz->seb) {
+                        $changes[$quizid][$field] = $value;
+                    }
                     continue;
                 }
                 $value = self::parse_value($field, $input);
@@ -521,6 +544,9 @@ class updater {
                     $gradeitem->gradepass = $fields['gradepass'];
                     $gradeitem->update('local_quizbulkedit');
                 }
+            }
+            if (isset($fields['seb'])) {
+                seb::apply($quiz, $cm, $fields['seb']);
             }
             if (isset($fields['visible']) && $fields['visible'] != $cm->visible) {
                 require_capability('moodle/course:activityvisibility', $context);

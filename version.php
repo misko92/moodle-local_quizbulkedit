@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_quizbulkedit';
-$plugin->version   = 2026100208;
+$plugin->version   = 2026100209;
 $plugin->requires  = 2025041400; // Moodle 5.0.
 $plugin->supported = [500, 502];
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.8.0';
+$plugin->release   = '0.9.0';
