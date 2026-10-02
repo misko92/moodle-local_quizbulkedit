@@ -2,9 +2,7 @@
 
 Edit the settings of every quiz in a course on one page, instead of opening each quiz's settings one at a time.
 
-In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the table, with these settings:
-
-Pick the columns you want with **Columns** (grouped like the quiz settings form; remembered per user):
+In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the table. Pick the columns you want with **Columns** (grouped like the quiz settings form; remembered per user):
 
 | Group | Settings |
 |---|---|
