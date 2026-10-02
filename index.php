@@ -81,6 +81,11 @@ if ($data = data_submitted()) {
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('bulkeditquizzes', 'local_quizbulkedit'));
+echo html_writer::link(
+    new moodle_url('/local/quizbulkedit/overrides.php', ['id' => $course->id]),
+    get_string('overrides', 'local_quizbulkedit'),
+    ['class' => 'btn btn-outline-primary mb-3']
+);
 if ($errors) {
     echo $OUTPUT->notification(get_string('fixerrors', 'local_quizbulkedit'), 'error');
 }

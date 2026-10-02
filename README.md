@@ -30,6 +30,20 @@ Times are entered in minutes. The quiz name and select box stay in view while sc
 - Only the values you changed are saved, so the page never overwrites edits made elsewhere after you opened it.
 - If any value is invalid, nothing is saved and the errors are shown in place.
 
+## Extra time & overrides
+
+**Bulk edit quizzes → Extra time & overrides** adds, updates or removes standard quiz overrides for chosen students
+and/or groups on all (or chosen) quizzes in the course, e.g. an accommodation of time and a half:
+
+- Time limit: multiply the quiz's own limit (e.g. ×1.5), add minutes, or set it; attempts; open date; close date (set,
+  or add minutes to the quiz's); password; and an optional reason saved with each override.
+- New values are merged into an existing override for the same student or group, so its other settings are kept.
+- **Preview** lists every student/group × quiz with the current and new override (and why any are skipped, e.g. a quiz
+  with no time limit); nothing is saved until **Apply**.
+- Saving uses mod_quiz's override manager (validation, calendar events, attempts in progress, logging), in one
+  transaction. Needs `mod/quiz:manageoverrides`; without `moodle/site:accessallgroups` only your groups are offered.
+- The page also lists every current override in the course.
+
 ## Protecting quiz passwords on student computers
 
 When a teacher types the quiz password into a student's "Start attempt" pop-up, the browser's back/forward cache can
