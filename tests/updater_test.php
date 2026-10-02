@@ -235,4 +235,35 @@ final class updater_test extends \advanced_testcase {
         $this->assertSame([], $changes);
         $this->assertArrayHasKey('visible', $errors[$quiz1->id]);
     }
+
+    public function test_subnet(): void {
+        global $DB;
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['subnet'] = '192.168.10.0/24,10.1. , 172.16.0.1-50, 2001:db8::/32';
+        $submitted[$quiz2->id]['subnet'] = 'school wifi';
+
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame(['subnet'], array_keys($errors[$quiz2->id]));
+        $this->assertArrayNotHasKey($quiz1->id, $errors);
+
+        unset($changes[$quiz2->id]);
+        updater::apply($course, $changes);
+        $subnet = $DB->get_field('quiz', 'subnet', ['id' => $quiz1->id]);
+        $this->assertSame('192.168.10.0/24, 10.1., 172.16.0.1-50, 2001:db8::/32', $subnet);
+        $this->assertTrue(address_in_subnet('10.1.2.3', $subnet));
+        $this->assertTrue(address_in_subnet('172.16.0.42', $subnet));
+        $this->assertFalse(address_in_subnet('8.8.8.8', $subnet));
+
+        // Clearing it removes the restriction.
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['subnet'] = '';
+        [$changes] = updater::collect_changes($quizzes, $submitted, $shown);
+        updater::apply($course, $changes);
+        $this->assertSame('', $DB->get_field('quiz', 'subnet', ['id' => $quiz1->id]));
+    }
 }

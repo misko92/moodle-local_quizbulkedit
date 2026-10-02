@@ -57,12 +57,13 @@ class editor implements renderable, templatable {
     public function export_for_template(renderer_base $output): array {
         $types = [
             'password' => 'text',
+            'subnet' => 'text',
             'timeopen' => 'datetime-local',
             'timeclose' => 'datetime-local',
             'timelimit' => 'number',
             'attempts' => 'number',
         ];
-        $hints = ['timelimit', 'attempts', 'reviewfrom'];
+        $hints = ['subnet', 'timelimit', 'attempts', 'reviewfrom'];
         $fieldnames = updater::get_fields();
 
         $fields = [];

@@ -8,6 +8,7 @@ In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the ta
 |---|---|
 | Visibility | Shown / Hidden. Needs `moodle/course:activityvisibility`. |
 | Password | |
+| Network address | "Require network address": comma-separated IPs, partial addresses (`10.1.`), ranges (`10.0.0.1-50`) or CIDR (`192.168.10.0/24`). Empty = any. |
 | Open / Close | Empty = no restriction. |
 | Time limit | In minutes, 0 = no limit. |
 | Attempts | 0 = unlimited. |

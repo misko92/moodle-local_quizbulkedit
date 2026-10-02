@@ -41,12 +41,12 @@ use stdClass;
 class updater {
     /** @var string[] Editable columns of the quiz table. */
     public const QUIZFIELDS = [
-        'password', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'browsersecurity',
+        'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'browsersecurity',
     ];
 
     /** @var string[] All editable fields, in display order. visible is the course module's; reviewfrom is virtual. */
     public const FIELDS = [
-        'visible', 'password', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'browsersecurity',
+        'visible', 'password', 'subnet', 'timeopen', 'timeclose', 'timelimit', 'attempts', 'grademethod', 'browsersecurity',
         'reviewfrom',
     ];
 
@@ -220,6 +220,15 @@ class updater {
                 return (int) $input;
             case 'password':
                 return \core_text::strlen($input) > 255 ? null : $input;
+            case 'subnet':
+                // Comma-separated addresses in any address_in_subnet() form (full, partial, range, CIDR; IPv4 or IPv6).
+                // Only catch obvious typos here; the quiz settings form itself does no checking at all.
+                $parts = array_map('trim', explode(',', $input));
+                $bad = array_filter($parts, fn($part) => !preg_match('~^[0-9a-f:./-]+$~i', $part));
+                if ($input !== '' && ($bad || \core_text::strlen($input) > 255)) {
+                    return null;
+                }
+                return implode(', ', array_filter($parts, 'strlen'));
         }
         return null;
     }
