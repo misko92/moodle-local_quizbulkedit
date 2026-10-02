@@ -19,10 +19,13 @@ namespace local_quizbulkedit\local;
 use context_module;
 use quizaccess_seb\seb_quiz_settings;
 use quizaccess_seb\settings_provider;
+use quizaccess_seb\template;
 use stdClass;
 
 /**
- * Safe Exam Browser column: turn SEB off, or copy another quiz's whole SEB setup.
+ * Safe Exam Browser column: turn SEB off, turn it on in a mode that needs no
+ * further input (client config, a template, or manual with default settings),
+ * or copy another quiz's whole SEB setup.
  *
  * SEB settings are stored by quizaccess_seb in its own table, with many options,
  * templates and uploaded config files, so the column doesn't edit them one by
@@ -89,6 +92,37 @@ class seb {
     }
 
     /**
+     * Ways to turn SEB on that need no further input, e.g. 'm4' => "Yes – Use SEB client config".
+     *
+     * Values: 'm4' client config, 't<template id>' a template, 'm1' manual configuration with default settings.
+     * An uploaded config needs a file, so it can only be copied from another quiz.
+     *
+     * @param \context|null $context only offer what the user may use here; null for all
+     * @return array value => label
+     */
+    public static function turn_on_choices(?\context $context = null): array {
+        if (!self::available()) {
+            return [];
+        }
+        $can = fn(int $mode) => $context === null || self::can_use_mode($context, $mode);
+        $choices = [];
+        if ($can(settings_provider::USE_SEB_CLIENT_CONFIG)) {
+            $choices['m' . settings_provider::USE_SEB_CLIENT_CONFIG] = get_string('seb_use_client', 'quizaccess_seb');
+        }
+        if ($can(settings_provider::USE_SEB_TEMPLATE)) {
+            foreach (template::get_records(['enabled' => 1], 'name') as $template) {
+                $choices['t' . $template->get('id')] = get_string('seb_use_template', 'quizaccess_seb') . ': ' .
+                    format_string($template->get('name'));
+            }
+        }
+        if ($can(settings_provider::USE_SEB_CONFIG_MANUALLY)) {
+            $choices['m' . settings_provider::USE_SEB_CONFIG_MANUALLY] =
+                get_string('sebmanualdefaults', 'local_quizbulkedit', get_string('seb_use_manually', 'quizaccess_seb'));
+        }
+        return $choices;
+    }
+
+    /**
      * A short description of a quiz's SEB setup, e.g. "Yes – Use an existing template: Exams".
      *
      * @param stdClass $quiz with seb and sebtemplate from load()
@@ -151,6 +185,12 @@ class seb {
         if ($input === '0') {
             return ['0', null];
         }
+        if (preg_match('/^(m\d+|t\d+)$/', $input)) {
+            if (!array_key_exists($input, self::turn_on_choices($cm->context))) {
+                return [null, get_string('errorsebpermission', 'local_quizbulkedit')];
+            }
+            return [$input, null];
+        }
         $sourceid = preg_match('/^q(\d+)$/', $input, $m) ? (int) $m[1] : 0;
         $source = $quizzes[$sourceid]['quiz'] ?? null;
         if (!$source || $sourceid === $quizid || !$source->seb) {
@@ -167,7 +207,7 @@ class seb {
      *
      * @param stdClass $quiz
      * @param stdClass $cm
-     * @param string $value '0' or 'q<quiz id>'
+     * @param string $value '0', 'm<mode>', 't<template id>' or 'q<quiz id>'
      */
     public static function apply(stdClass $quiz, stdClass $cm, string $value): void {
         global $DB;
@@ -178,6 +218,30 @@ class seb {
         }
 
         $existing = seb_quiz_settings::get_by_quiz_id($quiz->id);
+        if ($value[0] === 'm' || $value[0] === 't') {
+            // Start afresh, with the SEB plugin's default settings.
+            $mode = $value[0] === 't' ? settings_provider::USE_SEB_TEMPLATE : (int) substr($value, 1);
+            $templateid = $value[0] === 't' ? (int) substr($value, 1) : 0;
+            if (!array_key_exists($value, self::turn_on_choices($context))) {
+                throw new \required_capability_exception(
+                    $context,
+                    'quizaccess/seb:manage_seb_requiresafeexambrowser',
+                    'nopermissions',
+                    ''
+                );
+            }
+            if ($existing) {
+                $existing->delete();
+            }
+            settings_provider::delete_uploaded_config_file($cm->id);
+            (new seb_quiz_settings(0, (object) [
+                'quizid' => $quiz->id,
+                'cmid' => $cm->id,
+                'requiresafeexambrowser' => $mode,
+                'templateid' => $templateid,
+            ]))->save();
+            return;
+        }
         if ($value === '0') {
             if ($existing) {
                 $existing->delete();

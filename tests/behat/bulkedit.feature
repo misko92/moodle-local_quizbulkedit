@@ -246,3 +246,23 @@ Feature: Bulk edit quiz settings
     And I should see "2 quiz(zes) updated."
     And the field "Password: Quiz C" matches value "aaa"
     And "Select Quiz A" "checkbox" should be visible
+
+  Scenario: Turn Safe Exam Browser on when no quiz uses it yet
+    Given I am on the "Course 1" course page logged in as teacher1
+    When I navigate to "Bulk edit quizzes" in current page administration
+    And I click on "Select Quiz A" "checkbox"
+    And I click on "Select Quiz B" "checkbox"
+    And I set the field "Setting" to "Safe Exam Browser"
+    And I set the field "Value" to "Yes – Use SEB client config"
+    And I press "Apply to selected"
+    And I press "Save changes"
+    And I click on "Save" "button" in the "Review changes" "dialogue"
+    Then I should see "2 quiz(zes) updated."
+    And the field "Safe Exam Browser: Quiz A" matches value "Yes – Use SEB client config"
+    And the field "Safe Exam Browser: Quiz C" matches value "No"
+    And I set the field "Safe Exam Browser: Quiz C" to "Yes – Configure manually (default settings)"
+    And I press "Save changes"
+    And I click on "Save" "button" in the "Review changes" "dialogue"
+    And I am on the "Quiz C" "quiz activity editing" page
+    And I expand all fieldsets
+    And the field "Require the use of Safe Exam Browser" matches value "Yes – Configure manually"

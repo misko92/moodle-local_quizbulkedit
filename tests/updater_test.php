@@ -531,4 +531,59 @@ final class updater_test extends \advanced_testcase {
         $this->assertArrayHasKey('seb', $errors[$quiz2->id]);
         $this->assertSame(get_string('errorseblocked', 'local_quizbulkedit'), $errors[$quiz3->id]['seb']);
     }
+
+    public function test_seb_turn_on(): void {
+        global $CFG;
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        $quiz3 = $this->getDataGenerator()->get_plugin_generator('mod_quiz')->create_instance(['course' => $course->id]);
+        $this->setAdminUser();
+        $template = new \quizaccess_seb\template(0, (object) [
+            'name' => 'Exams', 'enabled' => 1,
+            'content' => file_get_contents($CFG->dirroot . '/mod/quiz/accessrule/seb/tests/fixtures/unencrypted.seb'),
+        ]);
+        $template->save();
+        // Quiz 3 starts with an uploaded config, to check switching mode clears it.
+        $this->enable_seb($quiz3, \quizaccess_seb\settings_provider::USE_SEB_UPLOAD_CONFIG);
+
+        $choices = \local_quizbulkedit\local\seb::turn_on_choices();
+        $this->assertArrayHasKey('m4', $choices);
+        $this->assertArrayHasKey('m1', $choices);
+        $this->assertArrayHasKey('t' . $template->get('id'), $choices);
+
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['seb'] = 'm4';
+        $submitted[$quiz2->id]['seb'] = 't' . $template->get('id');
+        $submitted[$quiz3->id]['seb'] = 'm1';
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame([], $errors);
+        updater::apply($course, $changes);
+
+        $settings = fn($quiz) => \quizaccess_seb\seb_quiz_settings::get_by_quiz_id($quiz->id);
+        $this->assertEquals(
+            \quizaccess_seb\settings_provider::USE_SEB_CLIENT_CONFIG,
+            $settings($quiz1)->get('requiresafeexambrowser')
+        );
+        $this->assertEquals(
+            \quizaccess_seb\settings_provider::USE_SEB_TEMPLATE,
+            $settings($quiz2)->get('requiresafeexambrowser')
+        );
+        $this->assertEquals($template->get('id'), $settings($quiz2)->get('templateid'));
+        $this->assertNotEmpty($settings($quiz2)->get_config_key());
+        $this->assertEquals(
+            \quizaccess_seb\settings_provider::USE_SEB_CONFIG_MANUALLY,
+            $settings($quiz3)->get('requiresafeexambrowser')
+        );
+        $cm3 = get_coursemodule_from_instance('quiz', $quiz3->id);
+        $this->assertNull(\quizaccess_seb\settings_provider::get_module_context_sebconfig_file($cm3->id));
+
+        // An unknown template is refused.
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['seb'] = 't999999';
+        [, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertArrayHasKey('seb', $errors[$quiz1->id]);
+    }
 }

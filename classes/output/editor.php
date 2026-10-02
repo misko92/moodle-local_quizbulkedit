@@ -95,7 +95,7 @@ class editor implements renderable, templatable {
         $shown = array_flip($this->shown_columns());
 
         $copychoices = [];
-        $sebchoices = ['0' => get_string('no')];
+        $sebchoices = ['0' => get_string('no')] + seb::turn_on_choices();
         foreach ($this->quizzes as $quizid => ['cm' => $cm, 'quiz' => $quiz]) {
             $copychoices[$quizid] = get_string('reviewcopy', 'local_quizbulkedit', $cm->get_formatted_name());
             if ($quiz->seb) {
@@ -157,7 +157,7 @@ class editor implements renderable, templatable {
                     continue;
                 }
                 if ($field === seb::FIELD) {
-                    $cells[] = $this->seb_cell($quizid, $quiz, $sebchoices, $values[$field], $originals[$field]) + [
+                    $cells[] = $this->seb_cell($quizid, $cm, $quiz, $sebchoices, $values[$field], $originals[$field]) + [
                         'field' => $field,
                         'original' => $originals[$field],
                         'changed' => $values[$field] !== $originals[$field],
@@ -243,13 +243,28 @@ class editor implements renderable, templatable {
      * The first option keeps the current setup; the others turn it off or copy another quiz's.
      *
      * @param int $quizid
+     * @param \cm_info $cm
      * @param \stdClass $quiz with the SEB fields from seb::load()
-     * @param array $sebchoices value => label for every quiz using SEB, plus '0' for off
+     * @param array $sebchoices value => label: '0' for off, ways to turn it on, and every quiz using SEB
      * @param string $value current value
      * @param string $original value originally shown (the current SEB mode)
      * @return array
      */
-    protected function seb_cell(int $quizid, \stdClass $quiz, array $sebchoices, string $value, string $original): array {
+    protected function seb_cell(
+        int $quizid,
+        \cm_info $cm,
+        \stdClass $quiz,
+        array $sebchoices,
+        string $value,
+        string $original
+    ): array {
+        // Only the ways to turn SEB on that this user may use on this quiz.
+        $turnon = seb::turn_on_choices($cm->context);
+        $sebchoices = array_filter(
+            $sebchoices,
+            fn($key) => !preg_match('/^[mt]\d+$/', $key) || isset($turnon[$key]),
+            ARRAY_FILTER_USE_KEY
+        );
         $choices = [$original => seb::describe($quiz)] + $sebchoices;
         unset($choices['q' . $quizid]);
         $options = [];

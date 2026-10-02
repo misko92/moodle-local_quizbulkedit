@@ -7,7 +7,7 @@ In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the ta
 | Group | Settings |
 |---|---|
 | General | Quiz name (renames everywhere, incl. gradebook and calendar); visibility (needs `moodle/course:activityvisibility`) |
-| Extra restrictions | Password; network address (comma-separated IPs, partial addresses, ranges or CIDR); Safe Exam Browser (turn off, or copy another quiz's whole SEB setup including an uploaded config file; locked once a quiz has attempts, and each SEB mode needs its own capability, as in the quiz settings form); enforced delays between attempts |
+| Extra restrictions | Password; network address (comma-separated IPs, partial addresses, ranges or CIDR); Safe Exam Browser (turn on with SEB client config, a site template or manual default settings; turn off; or copy another quiz's whole SEB setup including an uploaded config file; locked once a quiz has attempts, and each SEB mode needs its own capability, as in the quiz settings form); enforced delays between attempts |
 | Timing | Open, close, time limit, when time expires, grace period (checked against the site minimum, as the settings form does) |
 | Grade | Maximum grade (rescales existing grades, as the quiz Questions page does); grade to pass (same checks as the settings form); attempts; grading method (changing it regrades) |
 | Layout | Navigation method |
