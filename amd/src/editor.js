@@ -80,7 +80,8 @@ export const init = (formId) => {
     const valueControl = () => valueControls.find((control) => control.dataset.bulkvalue === fieldSelect.value);
     const randomButton = form.querySelector('[data-action="bulkrandom"]');
     const selectAll = form.querySelector('[data-action="selectall"]');
-    const rowBoxes = () => [...form.querySelectorAll('[data-action="select"]')];
+    // Only quizzes left visible by the filter can be selected or changed in bulk.
+    const rowBoxes = () => [...form.querySelectorAll('[data-action="select"]')].filter((box) => !box.closest('tr').hidden);
     const selectedRows = () => rowBoxes().filter((box) => box.checked).map((box) => box.closest('tr'));
 
     const syncToolbar = () => {
@@ -119,6 +120,53 @@ export const init = (formId) => {
         (await requireSelection()).forEach((row) => {
             setValue(row.querySelector('input[data-field="password"]'), randomPassword());
         });
+    });
+
+    const quizRows = [...form.querySelectorAll('tr[data-quizid]')];
+    const reviewRow = (row) => form.querySelector(`tr[data-reviewfor="${row.dataset.quizid}"]`);
+    const setReviewOpen = (row, open) => {
+        reviewRow(row).hidden = !open || row.hidden;
+        row.querySelector('[data-action="togglereview"]').setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    const isReviewOpen = (row) => row.querySelector('[data-action="togglereview"]').getAttribute('aria-expanded') === 'true';
+
+    const filterInput = document.querySelector('[data-action="filter"]');
+    const filterValue = form.querySelector('[data-region="filtervalue"]');
+    const filterCount = document.querySelector('[data-region="filtercount"]');
+    const applyFilter = async() => {
+        const words = filterInput.value.toLowerCase().split(/\s+/).filter((word) => word.length);
+        let shown = 0;
+        quizRows.forEach((row) => {
+            const text = row.dataset.search.toLowerCase();
+            row.hidden = !words.every((word) => text.includes(word));
+            setReviewOpen(row, isReviewOpen(row));
+            shown += row.hidden ? 0 : 1;
+        });
+        filterValue.value = filterInput.value;
+        filterCount.textContent = words.length ?
+            await getString('filtercount', 'local_quizbulkedit', {shown, total: quizRows.length}) : '';
+        const boxes = rowBoxes();
+        selectAll.checked = boxes.length > 0 && boxes.every((box) => box.checked);
+        selectAll.indeterminate = !selectAll.checked && boxes.some((box) => box.checked);
+    };
+    filterInput.addEventListener('input', applyFilter);
+    filterInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+        }
+    });
+    applyFilter();
+
+    form.addEventListener('click', (e) => {
+        const toggle = e.target.closest('[data-action="togglereview"]');
+        if (toggle) {
+            const row = toggle.closest('tr');
+            setReviewOpen(row, !isReviewOpen(row));
+        } else if (e.target.closest('[data-action="togglereviewall"]')) {
+            const visible = quizRows.filter((row) => !row.hidden);
+            const open = !visible.every(isReviewOpen);
+            visible.forEach((row) => setReviewOpen(row, open));
+        }
     });
 
     selectAll.addEventListener('change', () => {

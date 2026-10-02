@@ -25,6 +25,9 @@
         "courseid": 2,
         "sesskey": "abc",
         "hasrows": true,
+        "colspan": 4,
+        "filter": "",
+        "reviewtimes": [{"label": "During the attempt"}, {"label": "Immediately after the attempt"}],
         "fields": [
             {"field": "password", "label": "Password", "hint": null, "isselect": false, "type": "text", "value": ""},
             {"field": "visible", "label": "Visibility", "hint": null, "isselect": true,
@@ -38,7 +41,8 @@
                 {"field": "visible", "isselect": true, "original": "1", "changed": false, "error": null,
                  "label": "Visibility: Quiz 1", "disabled": false,
                  "options": [{"value": "1", "label": "Shown", "selected": true}]}
-            ]
+            ],
+            "review": [{"label": "The attempt", "cells": [{"on": true}, {"on": false}]}]
         }]
     }
 }}
@@ -46,9 +50,16 @@
     {{#str}} noquizzes, local_quizbulkedit {{/str}}
 {{/hasrows}}
 {{#hasrows}}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <label for="local_quizbulkedit_filter" class="form-label mb-0">{{#str}} filter, local_quizbulkedit {{/str}}</label>
+    <input type="search" id="local_quizbulkedit_filter" class="form-control w-auto" value="{{filter}}"
+           data-action="filter" placeholder="{{#str}} filterplaceholder, local_quizbulkedit {{/str}}">
+    <span class="text-muted small" data-region="filtercount" aria-live="polite"></span>
+</div>
 <form method="post" action="{{actionurl}}" id="local_quizbulkedit_form" data-region="local_quizbulkedit">
     <input type="hidden" name="id" value="{{courseid}}">
     <input type="hidden" name="sesskey" value="{{sesskey}}">
+    <input type="hidden" name="filter" value="{{filter}}" data-region="filtervalue">
 
     <div class="card mb-3">
         <div class="card-body d-flex flex-wrap align-items-end gap-2">
@@ -99,13 +110,18 @@
                     <th scope="col">
                         {{label}}
                         {{#hint}}<div class="small fw-normal text-muted">{{.}}</div>{{/hint}}
+                        {{#isreview}}
+                        <button type="button" class="btn btn-link btn-sm p-0 fw-normal" data-action="togglereviewall">
+                            {{#str}} viewallreview, local_quizbulkedit {{/str}}
+                        </button>
+                        {{/isreview}}
                     </th>
                     {{/fields}}
                 </tr>
             </thead>
             <tbody>
                 {{#rows}}
-                <tr data-quizid="{{quizid}}">
+                <tr data-quizid="{{quizid}}" data-search="{{name}} {{section}}">
                     <td>
                         <input type="checkbox" class="form-check-input" data-action="select" id="local_quizbulkedit_sel{{quizid}}">
                         <label for="local_quizbulkedit_sel{{quizid}}" class="visually-hidden">{{#str}} select, local_quizbulkedit, {{name}} {{/str}}</label>
@@ -137,8 +153,42 @@
                                {{#error}}aria-invalid="true"{{/error}}>
                         {{/isselect}}
                         {{#error}}<div class="invalid-feedback">{{.}}</div>{{/error}}
+                        {{#isreview}}
+                        <button type="button" class="btn btn-link btn-sm p-0" data-action="togglereview"
+                                aria-controls="local_quizbulkedit_review{{quizid}}" aria-expanded="false"
+                                aria-label="{{#str}} viewreviewfor, local_quizbulkedit, {{name}} {{/str}}">
+                            {{#str}} viewreview, local_quizbulkedit {{/str}}
+                        </button>
+                        {{/isreview}}
                     </td>
                     {{/cells}}
+                </tr>
+                <tr id="local_quizbulkedit_review{{quizid}}" data-reviewfor="{{quizid}}" hidden>
+                    <td></td>
+                    <td colspan="{{colspan}}">
+                        <table class="table table-sm table-bordered w-auto mb-1 small">
+                            <caption class="caption-top pb-1">{{#str}} reviewfor, local_quizbulkedit, {{name}} {{/str}}</caption>
+                            <thead>
+                                <tr>
+                                    <td></td>
+                                    {{#reviewtimes}}<th scope="col" class="text-center">{{label}}</th>{{/reviewtimes}}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{#review}}
+                                <tr>
+                                    <th scope="row" class="fw-normal">{{label}}</th>
+                                    {{#cells}}
+                                    <td class="text-center">
+                                        {{#on}}<span aria-hidden="true">&#x2713;</span><span class="visually-hidden">{{#str}} yes {{/str}}</span>{{/on}}
+                                        {{^on}}<span aria-hidden="true" class="text-muted">&ndash;</span><span class="visually-hidden">{{#str}} no {{/str}}</span>{{/on}}
+                                    </td>
+                                    {{/cells}}
+                                </tr>
+                                {{/review}}
+                            </tbody>
+                        </table>
+                    </td>
                 </tr>
                 {{/rows}}
             </tbody>

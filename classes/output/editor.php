@@ -17,6 +17,7 @@
 namespace local_quizbulkedit\output;
 
 use local_quizbulkedit\local\updater;
+use mod_quiz\question\display_options;
 use moodle_url;
 use renderable;
 use renderer_base;
@@ -30,6 +31,26 @@ use templatable;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class editor implements renderable, templatable {
+    /** @var array review bit field => lang string, labelled as in the quiz settings form */
+    protected const REVIEWITEMS = [
+        'reviewattempt' => ['theattempt', 'quiz'],
+        'reviewcorrectness' => ['whethercorrect', 'question'],
+        'reviewmaxmarks' => ['maxmarks', 'quiz'],
+        'reviewmarks' => ['marks', 'quiz'],
+        'reviewspecificfeedback' => ['specificfeedback', 'question'],
+        'reviewgeneralfeedback' => ['generalfeedback', 'question'],
+        'reviewrightanswer' => ['rightanswer', 'question'],
+        'reviewoverallfeedback' => ['reviewoverallfeedback', 'quiz'],
+    ];
+
+    /** @var array review timing (quiz lang string suffix) => bit */
+    protected const REVIEWTIMES = [
+        'during' => display_options::DURING,
+        'immediately' => display_options::IMMEDIATELY_AFTER,
+        'open' => display_options::LATER_WHILE_OPEN,
+        'closed' => display_options::AFTER_CLOSE,
+    ];
+
     /**
      * Constructor.
      *
@@ -38,6 +59,7 @@ class editor implements renderable, templatable {
      * @param array $submitted quiz id => field => string, to redisplay after a failed save
      * @param array $original quiz id => field => string originally shown, kept across a failed save
      * @param array $errors quiz id => field => message
+     * @param string $filter keyword the quiz list is filtered by
      */
     public function __construct(
         /** @var int course id */
@@ -49,7 +71,9 @@ class editor implements renderable, templatable {
         /** @var array original values */
         protected array $original = [],
         /** @var array validation errors */
-        protected array $errors = []
+        protected array $errors = [],
+        /** @var string keyword filter */
+        protected string $filter = ''
     ) {
     }
 
@@ -74,6 +98,7 @@ class editor implements renderable, templatable {
                 'field' => $field,
                 'label' => get_string($field, 'local_quizbulkedit'),
                 'hint' => in_array($field, $hints) ? get_string($field . '_hint', 'local_quizbulkedit') : null,
+                'isreview' => $field === 'reviewfrom',
             ] + $this->control($field, $types[$field] ?? null, $choices[$field], '');
         }
 
@@ -94,6 +119,7 @@ class editor implements renderable, templatable {
                     'changed' => $value !== $original,
                     'error' => $this->errors[$quizid][$field] ?? null,
                     'label' => get_string($field, 'local_quizbulkedit') . ': ' . $cm->get_formatted_name(),
+                    'isreview' => $field === 'reviewfrom',
                     'disabled' => $field === 'visible' &&
                         !has_capability('moodle/course:activityvisibility', $cm->context),
                 ] + $this->control($field, $types[$field] ?? null, $fieldchoices, $value);
@@ -106,6 +132,7 @@ class editor implements renderable, templatable {
                 'section' => get_section_name($cm->get_course(), $cm->sectionnum),
                 'hidden' => !$cm->visible,
                 'cells' => $cells,
+                'review' => $this->review_grid($quiz),
             ];
         }
 
@@ -116,7 +143,31 @@ class editor implements renderable, templatable {
             'fields' => $fields,
             'rows' => $rows,
             'hasrows' => !empty($rows),
+            'colspan' => count($fields) + 1,
+            'filter' => $this->filter,
+            'reviewtimes' => array_map(
+                fn($time) => ['label' => get_string('review' . $time, 'quiz')],
+                array_keys(self::REVIEWTIMES)
+            ),
         ];
+    }
+
+    /**
+     * Template data for the read-only grid of a quiz's review options.
+     *
+     * @param \stdClass $quiz
+     * @return array rows of [label, cells => [on]]
+     */
+    protected function review_grid(\stdClass $quiz): array {
+        $items = [];
+        foreach (self::REVIEWITEMS as $field => [$identifier, $component]) {
+            $cells = [];
+            foreach (self::REVIEWTIMES as $when) {
+                $cells[] = ['on' => (bool) ($quiz->$field & $when)];
+            }
+            $items[] = ['label' => get_string($identifier, $component), 'cells' => $cells];
+        }
+        return $items;
     }
 
     /**

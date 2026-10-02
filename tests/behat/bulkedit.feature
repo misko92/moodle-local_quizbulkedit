@@ -61,3 +61,23 @@ Feature: Bulk edit quiz settings
     And the field "Visibility: Quiz A" matches value "Shown"
     And the field "Visibility: Quiz B" matches value "Hidden"
     And the field "Visibility: Quiz C" matches value "Hidden"
+
+  Scenario: Filter by keyword, then bulk changes only touch the quizzes shown
+    Given I am on the "Course 1" course page logged in as teacher1
+    When I navigate to "Bulk edit quizzes" in current page administration
+    And I set the field "Filter" to "quiz b"
+    Then I should see "Showing 1 of 3 quizzes"
+    And "Select Quiz A" "checkbox" should not be visible
+    And I click on "View review options of Quiz B" "button"
+    And I should see "Review options of Quiz B"
+    And I click on "Select all quizzes" "checkbox"
+    And I set the field "Setting" to "Password"
+    And I set the field "Value" to "onlyb"
+    And I press "Apply to selected"
+    And I press "Save changes"
+    And I should see "1 quiz(zes) updated."
+    And the field "Filter" matches value "quiz b"
+    And I set the field "Filter" to ""
+    And the field "Password: Quiz A" matches value "aaa"
+    And the field "Password: Quiz B" matches value "onlyb"
+    And the field "Password: Quiz C" matches value "ccc"

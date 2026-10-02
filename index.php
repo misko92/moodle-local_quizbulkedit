@@ -33,6 +33,7 @@ require_login($course);
 $context = context_course::instance($course->id);
 require_capability('moodle/course:manageactivities', $context);
 
+$filter = optional_param('filter', '', PARAM_TEXT);
 $url = new moodle_url('/local/quizbulkedit/index.php', ['id' => $course->id]);
 $PAGE->set_url($url);
 $PAGE->set_context($context);
@@ -41,6 +42,8 @@ $PAGE->set_title(get_string('bulkeditquizzes', 'local_quizbulkedit'));
 $PAGE->set_heading($course->fullname);
 $PAGE->navbar->add(get_string('bulkeditquizzes', 'local_quizbulkedit'), $url);
 
+// Keep the keyword filter across the save redirect, but not in the page URL itself.
+$returnurl = new moodle_url($url, $filter === '' ? [] : ['filter' => $filter]);
 $quizzes = updater::get_quizzes($course);
 $submitted = [];
 $original = [];
@@ -64,11 +67,11 @@ if ($data = data_submitted()) {
     [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $original);
     if (!$errors) {
         if (!$changes) {
-            redirect($url, get_string('nochanges', 'local_quizbulkedit'), null, \core\output\notification::NOTIFY_INFO);
+            redirect($returnurl, get_string('nochanges', 'local_quizbulkedit'), null, \core\output\notification::NOTIFY_INFO);
         }
         $count = updater::apply($course, $changes);
         redirect(
-            $url,
+            $returnurl,
             get_string('changessaved', 'local_quizbulkedit', $count),
             null,
             \core\output\notification::NOTIFY_SUCCESS
@@ -81,5 +84,5 @@ echo $OUTPUT->heading(get_string('bulkeditquizzes', 'local_quizbulkedit'));
 if ($errors) {
     echo $OUTPUT->notification(get_string('fixerrors', 'local_quizbulkedit'), 'error');
 }
-echo $OUTPUT->render(new editor($course->id, $quizzes, $submitted, $original, $errors));
+echo $OUTPUT->render(new editor($course->id, $quizzes, $submitted, $original, $errors, $filter));
 echo $OUTPUT->footer();

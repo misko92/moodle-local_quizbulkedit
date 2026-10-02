@@ -13,8 +13,9 @@ In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the ta
 | Time limit | In minutes, 0 = no limit. |
 | Attempts | 0 = unlimited. |
 | Grading method | Changing it regrades the quiz, like the normal settings form does. |
-| Review options | Copy all review options from another quiz in the course. |
+| Review options | **View** shows the quiz's review options grid (**View all** in the header expands every quiz). Copy all review options from another quiz in the course with "Same as …". |
 
+- **Filter** by keyword (quiz or section name). Select all and Apply to selected only affect the quizzes shown; the filter is kept after saving.
 - Edit any cell, or tick quizzes and use the toolbar to **Apply to selected** a value for one setting.
 - **Random password for each selected** gives every ticked quiz its own random 6-character password.
 - Only the values you changed are saved, so the page never overwrites edits made elsewhere after you opened it.
