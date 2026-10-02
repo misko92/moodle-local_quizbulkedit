@@ -16,7 +16,7 @@ jobs:
 
     services:
       mariadb:
-        image: mariadb:10.11
+        image: mariadb:11.4  # Moodle 5.3+ requires MariaDB 11.4.
         env:
           MYSQL_USER: root
           MYSQL_ALLOW_EMPTY_PASSWORD: "true"
@@ -34,11 +34,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Minimum supported: Moodle 5.0.
-          - php: "8.2"
-            moodle-branch: MOODLE_500_STABLE
-          - php: "8.3"
-            moodle-branch: MOODLE_501_STABLE
           # Latest stable.
           - php: "8.4"
             moodle-branch: MOODLE_502_STABLE

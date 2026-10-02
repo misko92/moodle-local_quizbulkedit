@@ -468,9 +468,11 @@ export const init = (formId) => {
             if (NOT_COPIED.includes(field) || !control || control.disabled) {
                 return;
             }
-            // Safe Exam Browser: copy the other quiz's setup, or turn it off.
-            const value = field === 'seb' ?
-                (sourceControl.dataset.original === '0' ? '0' : `q${sourceId}`) : sourceControl.value;
+            let value = sourceControl.value;
+            if (field === 'seb') {
+                // Safe Exam Browser: copy the other quiz's setup, or turn it off.
+                value = sourceControl.dataset.original === '0' ? '0' : `q${sourceId}`;
+            }
             if (control.tagName !== 'SELECT' || [...control.options].some((option) => option.value === value)) {
                 setValue(control, value);
             }
