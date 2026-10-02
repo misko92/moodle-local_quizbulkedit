@@ -18,6 +18,8 @@ namespace local_quizbulkedit\local;
 
 use cm_info;
 use context_module;
+use core_courseformat\formatactions;
+use grade_item;
 use core_date;
 use DateTime;
 use mod_quiz\question\display_options;
@@ -52,10 +54,10 @@ class updater {
      * (password, network address) come first, as they are the most used here.
      */
     public const COLUMNGROUPS = [
-        'general' => ['visible'],
+        'general' => ['name', 'visible'],
         'restrictions' => ['password', 'subnet', 'delay1', 'delay2'],
         'timing' => ['timeopen', 'timeclose', 'timelimit', 'overduehandling', 'graceperiod'],
-        'grade' => ['attempts', 'grademethod'],
+        'grade' => ['grade', 'gradepass', 'attempts', 'grademethod'],
         'layout' => ['navmethod'],
         'behaviour' => ['shuffleanswers', 'canredoquestions', 'attemptonlast'],
         'review' => ['review'],
@@ -77,8 +79,14 @@ class updater {
         'showuserpicture', 'decimalpoints', 'questiondecimalpoints', 'showblocks', ...self::REVIEWFIELDS,
     ];
 
-    /** @var string[] All editable fields. visible is the course module's. */
-    public const FIELDS = ['visible', ...self::QUIZFIELDS];
+    /** @var string[] Fields saved through their own core API rather than written to the quiz table. */
+    public const SPECIALFIELDS = ['name', 'visible', 'grade', 'gradepass'];
+
+    /** @var string[] All editable fields. */
+    public const FIELDS = [...self::SPECIALFIELDS, ...self::QUIZFIELDS];
+
+    /** @var string[] Fields holding decimal numbers. */
+    protected const NUMBERFIELDS = ['grade', 'gradepass'];
 
     /**
      * The table columns, in display order.
@@ -124,8 +132,11 @@ class updater {
             'id',
             array_keys($cms),
             '',
-            'id, course, name, preferredbehaviour, ' . implode(', ', self::QUIZFIELDS)
+            'id, course, name, grade, preferredbehaviour, ' . implode(', ', self::QUIZFIELDS)
         );
+        $gradepasses = $DB->get_records_menu('grade_items', [
+            'courseid' => $course->id, 'itemtype' => 'mod', 'itemmodule' => 'quiz', 'itemnumber' => 0,
+        ], '', 'iteminstance, gradepass');
 
         // Order by position on the course page.
         $sequence = array_flip(array_keys($modinfo->get_cms()));
@@ -136,6 +147,10 @@ class updater {
             if (isset($quizrecords[$quizid])) {
                 $quiz = $quizrecords[$quizid];
                 $quiz->visible = (int) $cm->visible;
+                $quiz->grade = (float) $quiz->grade;
+                $quiz->hasgradeitem = isset($gradepasses[$quizid]);
+                $quiz->gradepass = (float) ($gradepasses[$quizid] ?? 0);
+                $quiz->completionpassgrade = !empty($cm->completionpassgrade);
                 $quizzes[$quizid] = ['cm' => $cm, 'quiz' => $quiz];
             }
         }
@@ -196,6 +211,11 @@ class updater {
                 $dt = new DateTime('@' . $value);
                 $dt->setTimezone(core_date::get_user_timezone_object());
                 return $dt->format('Y-m-d\TH:i');
+            case 'grade':
+            case 'gradepass':
+                // Plain number without trailing zeros, e.g. 10 or 7.5.
+                return (string) (0 + (float) $value);
+            case 'name':
             case 'password':
             case 'subnet':
             case 'overduehandling':
@@ -254,6 +274,18 @@ class updater {
                     return null;
                 }
                 return $dt->getTimestamp();
+            case 'name':
+                $name = clean_param($input, PARAM_TEXT);
+                return ($name === '' || \core_text::strlen($name) > 255) ? null : $name;
+            case 'grade':
+            case 'gradepass':
+                if ($input === '' && $field === 'gradepass') {
+                    return 0.0;
+                }
+                if (!is_numeric($input) || $input < 0) {
+                    return null;
+                }
+                return (float) $input;
             case 'attempts':
                 if ($input === '') {
                     return 0;
@@ -315,7 +347,9 @@ class updater {
                     $errors[$quizid][$field] = get_string('errorvisibility', 'local_quizbulkedit');
                     continue;
                 }
-                if ((string) $value !== (string) $quiz->$field) {
+                $changed = in_array($field, self::NUMBERFIELDS) ?
+                    abs($value - $quiz->$field) > 1e-7 : (string) $value !== (string) $quiz->$field;
+                if ($changed) {
                     $changes[$quizid][$field] = $value;
                 }
             }
@@ -334,6 +368,21 @@ class updater {
                 }
                 if (empty($changes[$quizid])) {
                     unset($changes[$quizid]);
+                }
+            }
+
+            if (isset($changes[$quizid]['grade']) || isset($changes[$quizid]['gradepass'])) {
+                // As the quiz settings form.
+                $grade = $changes[$quizid]['grade'] ?? $quiz->grade;
+                $gradepass = $changes[$quizid]['gradepass'] ?? $quiz->gradepass;
+                $field = isset($changes[$quizid]['gradepass']) ? 'gradepass' : 'grade';
+                $cbm = in_array($quiz->preferredbehaviour, ['deferredcbm', 'immediatecbm']);
+                if (isset($changes[$quizid]['gradepass']) && !$quiz->hasgradeitem) {
+                    $errors[$quizid]['gradepass'] = get_string('errornogradeitem', 'local_quizbulkedit');
+                } else if ($grade > 0 && $gradepass > $grade && !$cbm) {
+                    $errors[$quizid][$field] = get_string('gradepassgreaterthangrade', 'grades', $grade);
+                } else if ($quiz->completionpassgrade && $gradepass == 0) {
+                    $errors[$quizid][$field] = get_string('activitygradetopassnotset', 'completion');
                 }
             }
 
@@ -426,6 +475,7 @@ class updater {
     public static function apply(stdClass $course, array $changes): int {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/course/lib.php');
+        require_once($CFG->libdir . '/gradelib.php');
         require_once($CFG->dirroot . '/mod/quiz/lib.php');
         require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
@@ -455,6 +505,23 @@ class updater {
             $quiz->coursemodule = $cm->id;
             $quiz->cmid = $cm->id;
 
+            if (isset($fields['name'])) {
+                formatactions::cm($course->id)->rename($cm->id, $fields['name']);
+            }
+            if (isset($fields['grade'])) {
+                // Rescales existing grades and overall feedback, and updates the gradebook.
+                quiz_settings::create($quiz->id)->get_grade_calculator()->update_quiz_maximum_grade($fields['grade']);
+            }
+            if (isset($fields['gradepass'])) {
+                $gradeitem = grade_item::fetch([
+                    'courseid' => $course->id, 'itemtype' => 'mod', 'itemmodule' => 'quiz',
+                    'iteminstance' => $quiz->id, 'itemnumber' => 0,
+                ]);
+                if ($gradeitem) {
+                    $gradeitem->gradepass = $fields['gradepass'];
+                    $gradeitem->update('local_quizbulkedit');
+                }
+            }
             if (isset($fields['visible']) && $fields['visible'] != $cm->visible) {
                 require_capability('moodle/course:activityvisibility', $context);
                 set_coursemodule_visible($cm->id, $fields['visible'], 1, false);

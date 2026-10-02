@@ -85,8 +85,11 @@ class editor implements renderable, templatable {
             'timeopen' => 'datetime-local',
             'timeclose' => 'datetime-local',
             'attempts' => 'number',
+            'name' => 'text',
+            'grade' => 'number',
+            'gradepass' => 'number',
         ] + array_fill_keys(updater::MINUTEFIELDS, 'number');
-        $hints = ['subnet', 'timelimit', 'graceperiod', 'delay1', 'delay2', 'attempts', 'review'];
+        $hints = ['subnet', 'timelimit', 'graceperiod', 'delay1', 'delay2', 'attempts', 'grade', 'review'];
         $columns = updater::columns();
         $shown = array_flip($this->shown_columns());
 
@@ -316,7 +319,7 @@ class editor implements renderable, templatable {
             'type' => $type,
             'value' => $value,
             'isnumber' => $type === 'number',
-            'step' => in_array($field, updater::MINUTEFIELDS) ? 'any' : '1',
+            'step' => in_array($field, [...updater::MINUTEFIELDS, 'grade', 'gradepass']) ? 'any' : '1',
         ];
     }
 }

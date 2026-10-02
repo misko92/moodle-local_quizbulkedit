@@ -8,10 +8,10 @@ Pick the columns you want with **Columns** (grouped like the quiz settings form;
 
 | Group | Settings |
 |---|---|
-| General | Visibility (needs `moodle/course:activityvisibility`) |
+| General | Quiz name (renames everywhere, incl. gradebook and calendar); visibility (needs `moodle/course:activityvisibility`) |
 | Extra restrictions | Password; network address (comma-separated IPs, partial addresses, ranges or CIDR); enforced delays between attempts |
 | Timing | Open, close, time limit, when time expires, grace period (checked against the site minimum, as the settings form does) |
-| Grade | Attempts, grading method (changing it regrades) |
+| Grade | Maximum grade (rescales existing grades, as the quiz Questions page does); grade to pass (same checks as the settings form); attempts; grading method (changing it regrades) |
 | Layout | Navigation method |
 | Question behaviour | Shuffle within questions, allow redo within an attempt, each attempt builds on last |
 | Review options | **Show** opens an editable grid (**Show all** opens every quiz). The quiz settings form's rules apply: options grey out when they depend on another, when the question behaviour doesn't use them during the attempt, or (after close) when the quiz has no close date. "Copy from…" fills the grid from another quiz. |

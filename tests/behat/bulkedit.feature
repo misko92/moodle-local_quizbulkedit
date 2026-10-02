@@ -132,3 +132,27 @@ Feature: Bulk edit quiz settings
     Then "Select Quiz A" "checkbox" should not be visible
     And "Select Quiz C" "checkbox" should not be visible
     And "Select Quiz B" "checkbox" should be visible
+
+  Scenario: Rename quizzes and set grades
+    Given I am on the "Course 1" course page logged in as teacher1
+    When I navigate to "Bulk edit quizzes" in current page administration
+    And I press "Columns"
+    And I click on "Quiz name" "checkbox"
+    And I click on "Maximum grade" "checkbox"
+    And I click on "Grade to pass" "checkbox"
+    And I press "Columns"
+    And I set the field "Quiz name: Quiz A" to "Unit 1 test"
+    And I set the field "Maximum grade: Quiz A" to "20"
+    And I set the field "Grade to pass: Quiz A" to "12"
+    And I set the field "Grade to pass: Quiz B" to "150"
+    And I press "Save changes"
+    Then I should see "Nothing was saved"
+    And I should see "The grade to pass can not be greater than the maximum possible grade 100"
+    And I set the field "Grade to pass: Quiz B" to "5"
+    And I press "Save changes"
+    And I should see "2 quiz(zes) updated."
+    And the field "Quiz name: Unit 1 test" matches value "Unit 1 test"
+    And the field "Maximum grade: Unit 1 test" matches value "20"
+    And the field "Grade to pass: Unit 1 test" matches value "12"
+    And I am on the "Unit 1 test" "quiz activity editing" page
+    And the field "Grade to pass" matches value "12.00"

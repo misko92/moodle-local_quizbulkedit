@@ -376,4 +376,80 @@ final class updater_test extends \advanced_testcase {
         $this->assertArrayNotHasKey($quiz2->id, $errors);
         $this->assertSame(['overduehandling' => 'graceperiod', 'graceperiod' => 600], $changes[$quiz2->id]);
     }
+
+    public function test_name_grade_and_grade_to_pass(): void {
+        global $DB, $CFG;
+        require_once($CFG->libdir . '/gradelib.php');
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        $DB->set_field('quiz', 'grade', 10, ['id' => $quiz1->id]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $DB->insert_record('quiz_grades', ['quiz' => $quiz1->id, 'userid' => $student->id, 'grade' => 8, 'timemodified' => time()]);
+
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $this->assertSame('10', $shown[$quiz1->id]['grade']);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['name'] = 'Renamed quiz';
+        $submitted[$quiz1->id]['grade'] = '5';
+        $submitted[$quiz1->id]['gradepass'] = '2.5';
+        // Same number written differently: not a change.
+        $submitted[$quiz2->id]['grade'] = $shown[$quiz2->id]['grade'] . '.000';
+
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame([], $errors);
+        $this->assertEquals([$quiz1->id], array_keys($changes));
+        updater::apply($course, $changes);
+
+        $this->assertSame('Renamed quiz', $DB->get_field('quiz', 'name', ['id' => $quiz1->id]));
+        $this->assertEquals(5, $DB->get_field('quiz', 'grade', ['id' => $quiz1->id]));
+        // The student's 8/10 is rescaled to 4/5.
+        $this->assertEquals(4, $DB->get_field('quiz_grades', 'grade', ['quiz' => $quiz1->id, 'userid' => $student->id]));
+        $item = \grade_item::fetch(['courseid' => $course->id, 'itemtype' => 'mod', 'itemmodule' => 'quiz',
+            'iteminstance' => $quiz1->id, 'itemnumber' => 0]);
+        $this->assertSame('Renamed quiz', $item->itemname);
+        $this->assertEquals(5, $item->grademax);
+        $this->assertEquals(2.5, $item->gradepass);
+        $this->assertSame('2.5', updater::get_quizzes($course)[$quiz1->id]['quiz']->gradepass . '');
+    }
+
+    public function test_grade_to_pass_validation(): void {
+        global $DB;
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        $DB->set_field('quiz', 'grade', 10, ['id' => $quiz1->id]);
+        $DB->set_field('quiz', 'grade', 10, ['id' => $quiz2->id]);
+        $DB->set_field('quiz', 'preferredbehaviour', 'deferredcbm', ['id' => $quiz2->id]);
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['gradepass'] = '11';
+        $submitted[$quiz1->id]['name'] = '   ';
+        // CBM quizzes may have a grade to pass above the maximum grade, as in the settings form.
+        $submitted[$quiz2->id]['gradepass'] = '11';
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertEqualsCanonicalizing(['gradepass', 'name'], array_keys($errors[$quiz1->id]));
+        $this->assertArrayNotHasKey($quiz2->id, $errors);
+
+        // Lowering the maximum grade below the grade to pass is caught too.
+        $submitted = $shown;
+        $submitted[$quiz1->id]['gradepass'] = '6';
+        [$changes] = updater::collect_changes($quizzes, $submitted, $shown);
+        updater::apply($course, $changes);
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['grade'] = '5';
+        [, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertArrayHasKey('grade', $errors[$quiz1->id]);
+
+        // Completion needing a passing grade means it can't be 0.
+        $cm = get_coursemodule_from_instance('quiz', $quiz1->id);
+        $DB->set_field('course_modules', 'completionpassgrade', 1, ['id' => $cm->id]);
+        rebuild_course_cache($course->id, true);
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['gradepass'] = '0';
+        [, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertArrayHasKey('gradepass', $errors[$quiz1->id]);
+    }
 }
