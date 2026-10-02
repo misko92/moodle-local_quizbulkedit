@@ -24,6 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['allsettings'] = 'All settings (except name, visibility and dates)';
 $string['applytoselected'] = 'Apply to selected';
 $string['attemptonlast'] = 'Each attempt builds on last';
 $string['attempts'] = 'Attempts';
@@ -33,8 +34,16 @@ $string['canredoquestions'] = 'Allow redo within an attempt';
 $string['changedonly'] = 'Show changed quizzes only';
 $string['changessaved'] = '{$a} quiz(zes) updated.';
 $string['clearvalue'] = 'Leave the value empty to clear it (no password / no network or date restriction).';
+$string['closenow'] = 'Close now';
 $string['columns'] = 'Columns';
 $string['columnsdefault'] = 'Reset to default columns';
+$string['confirmattempts'] = 'Changing close dates, time limits or what happens when time expires also applies to attempts in progress.';
+$string['confirmgrade'] = 'Changing the maximum grade rescales grades students already have.';
+$string['confirmnone'] = '(none)';
+$string['confirmreview'] = 'Review options changed';
+$string['confirmsave'] = 'Save';
+$string['confirmsummary'] = '{$a->settings} change(s) to {$a->quizzes} quiz(zes):';
+$string['confirmtitle'] = 'Review changes';
 $string['decimalpoints'] = 'Decimal places in grades';
 $string['delay1'] = 'Delay 1st–2nd attempt (min)';
 $string['delay1_hint'] = '0 = none';
@@ -80,6 +89,7 @@ $string['name'] = 'Quiz name';
 $string['navmethod'] = 'Navigation method';
 $string['nochanges'] = 'No changes to save.';
 $string['noquizzes'] = 'There are no quizzes in this course that you can edit.';
+$string['opennow'] = 'Open now';
 $string['overduehandling'] = 'When time expires';
 $string['password'] = 'Password';
 $string['passwordguard'] = 'Protect quiz passwords on student computers';

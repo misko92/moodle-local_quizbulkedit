@@ -28,6 +28,9 @@ import {add as addToast} from 'core/toast';
 import {watchFormById, markFormChangedFromNode} from 'core_form/changechecker';
 import Ajax from 'core/ajax';
 import Notification from 'core/notification';
+import ModalSaveCancel from 'core/modal_save_cancel';
+import ModalEvents from 'core/modal_events';
+import {getStrings} from 'core/str';
 
 /** Characters for random passwords, without easily confused ones (0/O, 1/l/I). */
 const PASSWORD_CHARS = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -119,6 +122,41 @@ const reviewLocked = (field, bit, review, unusedDuring, hasClose) => {
 };
 
 /**
+ * Escape text for use in HTML.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+const escapeHtml = (text) => {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+};
+
+/**
+ * The current time as a datetime-local value, in the user's Moodle timezone (which the server parses dates in).
+ *
+ * @param {string} timezone IANA timezone name
+ * @returns {string} e.g. 2026-10-02T14:05
+ */
+const nowInTimezone = (timezone) => {
+    let parts;
+    try {
+        parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: timezone, hourCycle: 'h23',
+            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+        }).formatToParts(new Date());
+    } catch (e) {
+        // Unknown timezone name: fall back to the browser's own.
+        parts = new Intl.DateTimeFormat('en-GB', {
+            hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+        }).formatToParts(new Date());
+    }
+    const part = (type) => parts.find((p) => p.type === type).value;
+    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
+};
+
+/**
  * Initialise the page.
  *
  * @param {string} formId
@@ -165,6 +203,10 @@ export const init = (formId) => {
         (await requireSelection()).forEach((row) => {
             if (field === 'review') {
                 copyReview(row, value);
+                return;
+            }
+            if (field === 'all') {
+                copyAll(row, value);
                 return;
             }
             const control = row.querySelector(`[data-field="${field}"]`);
@@ -330,7 +372,7 @@ export const init = (formId) => {
         });
         // The bulk toolbar only offers the columns on show.
         [...fieldSelect.options].forEach((option) => {
-            option.hidden = !shown.includes(option.value);
+            option.hidden = option.value !== 'all' && !shown.includes(option.value);
         });
         if (fieldSelect.selectedOptions[0]?.hidden) {
             const first = [...fieldSelect.options].find((option) => !option.hidden);
@@ -412,4 +454,121 @@ export const init = (formId) => {
             form.querySelector('[data-action="bulkapply"]').click();
         }
     }));
+
+    // Copy every setting of another quiz, except its name, visibility and dates.
+    const NOT_COPIED = ['name', 'visible', 'timeopen', 'timeclose'];
+    const copyAll = (row, sourceId) => {
+        const source = quizRow(sourceId);
+        if (!source || source === row) {
+            return;
+        }
+        source.querySelectorAll('[data-field][data-original]:not([data-review])').forEach((sourceControl) => {
+            const field = sourceControl.dataset.field;
+            const control = row.querySelector(`[data-field="${field}"]`);
+            if (NOT_COPIED.includes(field) || !control || control.disabled) {
+                return;
+            }
+            // Safe Exam Browser: copy the other quiz's setup, or turn it off.
+            const value = field === 'seb' ?
+                (sourceControl.dataset.original === '0' ? '0' : `q${sourceId}`) : sourceControl.value;
+            if (control.tagName !== 'SELECT' || [...control.options].some((option) => option.value === value)) {
+                setValue(control, value);
+            }
+        });
+        copyReview(row, sourceId);
+    };
+
+    // Open now / Close now: set the date on the selected quizzes, then save (after the review pop-up).
+    const setNow = async(field) => {
+        const rows = await requireSelection();
+        if (!rows.length) {
+            return;
+        }
+        const now = nowInTimezone(form.dataset.timezone);
+        rows.forEach((row) => {
+            setValue(row.querySelector(`input[data-field="${field}"]`), now);
+            // Closing now: an open date that isn't before now would be refused (close must be after open), and the
+            // quiz is closed either way, so clear it. The review pop-up shows this.
+            const open = row.querySelector('input[data-field="timeopen"]');
+            if (field === 'timeclose' && open.value !== '' && open.value >= now) {
+                setValue(open, '');
+            }
+            // Opening a hidden quiz now would still leave students unable to see it.
+            const visible = row.querySelector('select[data-field="visible"]');
+            if (field === 'timeopen' && visible && !visible.disabled && visible.value === '0') {
+                setValue(visible, '1');
+            }
+            syncReview(row);
+        });
+        form.requestSubmit();
+    };
+    form.querySelector('[data-action="opennow"]').addEventListener('click', () => setNow('timeopen'));
+    form.querySelector('[data-action="closenow"]').addEventListener('click', () => setNow('timeclose'));
+
+    // Review before saving: list every change, and save only once confirmed.
+    const columnLabel = (field) => form.querySelector(`th[data-col="${field}"]`)?.dataset.label ?? field;
+    const shownValue = (control, value, none) => {
+        if (control.tagName === 'SELECT') {
+            const option = [...control.options].find((o) => o.value === value);
+            return option ? option.textContent.trim() : value;
+        }
+        return value === '' ? none : value.replace('T', ' ');
+    };
+    let confirmed = false;
+    form.addEventListener('submit', async(e) => {
+        if (confirmed) {
+            return;
+        }
+        e.preventDefault();
+        const strings = await getStrings([
+            'confirmtitle', 'confirmsave', 'confirmnone', 'confirmreview', 'confirmgrade', 'confirmattempts', 'nochanges',
+        ].map((key) => ({key, component: 'local_quizbulkedit'})));
+        const [title, save, none, reviewchanged, gradewarning, attemptswarning, nochanges] = strings;
+
+        let count = 0;
+        let quizzes = 0;
+        const warnings = new Set();
+        let list = '';
+        quizRows.forEach((row) => {
+            const changed = [...row.querySelectorAll('[data-original]')]
+                .filter((control) => !control.disabled && control.value !== control.dataset.original);
+            if (!changed.length) {
+                return;
+            }
+            quizzes++;
+            let items = '';
+            if (changed.some((control) => control.dataset.review)) {
+                items += `<li>${escapeHtml(reviewchanged)}</li>`;
+                count++;
+            }
+            changed.filter((control) => !control.dataset.review).forEach((control) => {
+                const field = control.dataset.field;
+                items += `<li>${escapeHtml(columnLabel(field))}: ` +
+                    `<del>${escapeHtml(shownValue(control, control.dataset.original, none))}</del> → ` +
+                    `<strong>${escapeHtml(shownValue(control, control.value, none))}</strong></li>`;
+                count++;
+                if (field === 'grade') {
+                    warnings.add(gradewarning);
+                }
+                if (['timeclose', 'timelimit', 'overduehandling', 'graceperiod'].includes(field)) {
+                    warnings.add(attemptswarning);
+                }
+            });
+            const name = row.querySelector('.local-quizbulkedit-sticky2 a').textContent.trim();
+            list += `<li><strong>${escapeHtml(name)}</strong><ul>${items}</ul></li>`;
+        });
+
+        if (!count) {
+            addToast(nochanges, {type: 'info'});
+            return;
+        }
+        const summary = await getString('confirmsummary', 'local_quizbulkedit', {settings: count, quizzes});
+        const body = `<p>${escapeHtml(summary)}</p><ul class="mb-2">${list}</ul>` +
+            [...warnings].map((warning) => `<div class="alert alert-warning py-2 mb-2">${escapeHtml(warning)}</div>`).join('');
+        const modal = await ModalSaveCancel.create({title, body, buttons: {save}, show: true, removeOnClose: true});
+        modal.getRoot().on(ModalEvents.save, () => {
+            confirmed = true;
+            form.requestSubmit();
+        });
+    });
 };

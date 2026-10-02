@@ -203,6 +203,12 @@ class editor implements renderable, templatable {
             'hasrows' => !empty($rows),
             'colspan' => count($shown) + 1,
             'filter' => $this->filter,
+            'timezone' => \core_date::get_user_timezone(),
+            'allchoices' => array_map(
+                fn($quizid, $label) => ['value' => $quizid, 'label' => $label],
+                array_keys($copychoices),
+                $copychoices
+            ),
             'reviewgrid' => json_encode($this->review_grid_strings()),
         ];
     }

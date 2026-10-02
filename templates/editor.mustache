@@ -26,6 +26,8 @@
         "sesskey": "abc",
         "hasrows": true,
         "colspan": 4,
+        "timezone": "Australia/Perth",
+        "allchoices": [{"value": "5", "label": "Same as Quiz 1"}],
         "defaultcolumns": "visible,password",
         "groups": [{"label": "General", "columns": [{"field": "visible", "label": "Visibility", "checked": true}]}],
         "filter": "",
@@ -87,7 +89,8 @@
         </div>
     </div>
 </div>
-<form method="post" action="{{actionurl}}" id="local_quizbulkedit_form" data-region="local_quizbulkedit">
+<form method="post" action="{{actionurl}}" id="local_quizbulkedit_form" data-region="local_quizbulkedit"
+      data-timezone="{{timezone}}">
     <input type="hidden" name="id" value="{{courseid}}">
     <input type="hidden" name="sesskey" value="{{sesskey}}">
     <input type="hidden" name="filter" value="{{filter}}" data-region="filtervalue">
@@ -100,6 +103,7 @@
                     {{#fields}}
                         <option value="{{field}}"{{#colhidden}} hidden{{/colhidden}}>{{label}}</option>
                     {{/fields}}
+                    <option value="all">{{#str}} allsettings, local_quizbulkedit {{/str}}</option>
                 </select>
             </div>
             <div>
@@ -115,6 +119,9 @@
                            {{#isnumber}}min="0" step="{{step}}"{{/isnumber}} aria-describedby="local_quizbulkedit_valuehelp" hidden>
                     {{/isselect}}
                 {{/fields}}
+                <select id="local_quizbulkedit_value_all" class="form-select" data-bulkvalue="all" hidden>
+                    {{#allchoices}}<option value="{{value}}">{{label}}</option>{{/allchoices}}
+                </select>
             </div>
             <button type="button" class="btn btn-secondary" data-action="bulkapply">
                 {{#str}} applytoselected, local_quizbulkedit {{/str}}
@@ -122,6 +129,14 @@
             <button type="button" class="btn btn-outline-secondary" data-action="bulkrandom">
                 {{#str}} randompasswords, local_quizbulkedit {{/str}}
             </button>
+            <div class="ms-auto d-flex gap-2">
+                <button type="button" class="btn btn-outline-success" data-action="opennow">
+                    {{#str}} opennow, local_quizbulkedit {{/str}}
+                </button>
+                <button type="button" class="btn btn-outline-danger" data-action="closenow">
+                    {{#str}} closenow, local_quizbulkedit {{/str}}
+                </button>
+            </div>
             <div id="local_quizbulkedit_valuehelp" class="form-text w-100 mt-0">
                 {{#str}} clearvalue, local_quizbulkedit {{/str}}
             </div>
@@ -139,7 +154,7 @@
                     </th>
                     <th scope="col" class="local-quizbulkedit-sticky2">{{#str}} quiz, local_quizbulkedit {{/str}}</th>
                     {{#fields}}
-                    <th scope="col" data-col="{{field}}"{{#colhidden}} hidden{{/colhidden}}>
+                    <th scope="col" data-col="{{field}}" data-label="{{label}}"{{#colhidden}} hidden{{/colhidden}}>
                         {{label}}
                         {{#hint}}<div class="small fw-normal text-muted">{{.}}</div>{{/hint}}
                         {{#isreview}}

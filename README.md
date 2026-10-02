@@ -18,6 +18,12 @@ In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the ta
 Times are entered in minutes. The quiz name and select box stay in view while scrolling a wide table sideways.
 
 - **Show changed quizzes only** narrows the list to quizzes with unsaved edits.
+- **Save changes** first shows a summary of every change (old → new, per quiz), with warnings where a change has knock-on
+  effects; nothing is saved until you confirm.
+- **Open now** / **Close now** set the selected quizzes' open or close date to the current minute and go straight to that
+  summary. Open now also shows a hidden quiz; Close now clears an open date that isn't before now.
+- **All settings (except name, visibility and dates)** in the toolbar copies one quiz's whole setup, including review
+  options and Safe Exam Browser, to the selected quizzes.
 - **Filter** by keyword (quiz or section name). Select all and Apply to selected only affect the quizzes shown; the filter is kept after saving.
 - Edit any cell, or tick quizzes and use the toolbar to **Apply to selected** a value for one setting.
 - **Random password for each selected** gives every ticked quiz its own random 6-character password.
