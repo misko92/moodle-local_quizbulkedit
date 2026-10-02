@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version information.
+ * Admin settings.
  *
  * @package    local_quizbulkedit
  * @copyright  2026 misko92
@@ -24,9 +24,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'local_quizbulkedit';
-$plugin->version   = 2026100206;
-$plugin->requires  = 2025041400; // Moodle 5.0.
-$plugin->supported = [500, 502];
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.6.0';
+if ($hassiteconfig) {
+    $settings = new admin_settingpage('local_quizbulkedit', get_string('pluginname', 'local_quizbulkedit'));
+    $settings->add(new admin_setting_configcheckbox(
+        'local_quizbulkedit/passwordguard',
+        get_string('passwordguard', 'local_quizbulkedit'),
+        get_string('passwordguard_desc', 'local_quizbulkedit'),
+        1
+    ));
+    $ADMIN->add('localplugins', $settings);
+}

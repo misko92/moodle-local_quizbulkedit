@@ -21,6 +21,16 @@ In a course, open **More → Bulk edit quizzes**. Each quiz is one row of the ta
 - Only the values you changed are saved, so the page never overwrites edits made elsewhere after you opened it.
 - If any value is invalid, nothing is saved and the errors are shown in place.
 
+## Protecting quiz passwords on student computers
+
+When a teacher types the quiz password into a student's "Start attempt" pop-up, the browser's back/forward cache can
+keep that page with the password still typed in, and the password field has a Reveal (eye) button. On student quiz
+pages this plugin hides that button, empties the field as the page is left, and reloads the page if it comes back
+from the cache. The teacher's own quiz settings page is not affected.
+
+Site administration → Plugins → Local plugins → Quiz bulk edit → *Protect quiz passwords on student computers*
+(on by default).
+
 ## How it saves
 
 Settings are written straight to the `quiz` table rather than through `quiz_update_instance()`. That function expects

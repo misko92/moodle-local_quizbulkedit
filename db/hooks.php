@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version information.
+ * Hook callbacks.
  *
  * @package    local_quizbulkedit
  * @copyright  2026 misko92
@@ -24,9 +24,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'local_quizbulkedit';
-$plugin->version   = 2026100206;
-$plugin->requires  = 2025041400; // Moodle 5.0.
-$plugin->supported = [500, 502];
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.6.0';
+$callbacks = [
+    [
+        'hook' => \core\hook\output\before_standard_head_html_generation::class,
+        'callback' => [\local_quizbulkedit\local\password_guard::class, 'before_standard_head_html_generation'],
+    ],
+    [
+        'hook' => \core\hook\output\before_footer_html_generation::class,
+        'callback' => [\local_quizbulkedit\local\password_guard::class, 'before_footer_html_generation'],
+    ],
+];
