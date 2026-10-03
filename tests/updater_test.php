@@ -586,4 +586,40 @@ final class updater_test extends \advanced_testcase {
         [, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
         $this->assertArrayHasKey('seb', $errors[$quiz1->id]);
     }
+
+    public function test_due_date(): void {
+        global $DB;
+        [$course, $quiz1, $quiz2] = $this->setup_course();
+        if (!updater::has_duedate()) {
+            $this->markTestSkipped('Quiz due dates need Moodle 5.3.');
+        }
+        $this->setTimezone('Australia/Perth');
+        $DB->set_field('quiz', 'timeopen', 1900000000, ['id' => $quiz1->id]);
+        $DB->set_field('quiz', 'timeclose', 1900172800, ['id' => $quiz1->id]);
+        $DB->set_field('quiz', 'timeclose', 1900172800, ['id' => $quiz2->id]);
+        $quizzes = updater::get_quizzes($course);
+        $this->assertContains('duedate', updater::columns());
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['duedate'] = updater::format_value('duedate', 1900086360);
+        // After closing: refused.
+        $submitted[$quiz2->id]['duedate'] = updater::format_value('duedate', 1900200000);
+        [$changes, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame(get_string('duedateafterclose', 'quiz'), $errors[$quiz2->id]['duedate']);
+        $this->assertArrayNotHasKey($quiz1->id, $errors);
+        unset($changes[$quiz2->id]);
+        updater::apply($course, $changes);
+        $this->assertEquals(1900086360, $DB->get_field('quiz', 'duedate', ['id' => $quiz1->id]));
+        // The calendar gets a due date event.
+        $this->assertTrue($DB->record_exists('event', ['modulename' => 'quiz', 'instance' => $quiz1->id,
+            'eventtype' => 'due']));
+
+        // Moving the close date before the due date is refused too.
+        $quizzes = updater::get_quizzes($course);
+        $shown = $this->shown($quizzes);
+        $submitted = $shown;
+        $submitted[$quiz1->id]['timeclose'] = updater::format_value('timeclose', 1900050000);
+        [, $errors] = updater::collect_changes($quizzes, $submitted, $shown);
+        $this->assertSame(get_string('duedateafterclose', 'quiz'), $errors[$quiz1->id]['timeclose']);
+    }
 }

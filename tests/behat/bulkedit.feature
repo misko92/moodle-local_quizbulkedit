@@ -219,8 +219,6 @@ Feature: Bulk edit quiz settings
     And I click on "Select Quiz D" "checkbox"
     And I press "Close now"
     And I should see "also applies to attempts in progress" in the "Review changes" "dialogue"
-    # Opened this same minute: the open date is cleared, as close must be after open.
-    And I should see "Open:" in the "Review changes" "dialogue"
     And I click on "Save" "button" in the "Review changes" "dialogue"
     And I should see "1 quiz(zes) updated."
     And the field "Close: Quiz D" does not match value ""
@@ -266,3 +264,19 @@ Feature: Bulk edit quiz settings
     And I am on the "Quiz C" "quiz activity editing" page
     And I expand all fieldsets
     And the field "Require the use of Safe Exam Browser" matches value "Yes – Configure manually"
+
+  Scenario: Close now clears an open date that is still in the future
+    Given the following "activities" exist:
+      | activity | name   | course | timeopen     |
+      | quiz     | Quiz E | C1     | ##tomorrow## |
+    And I am on the "Course 1" course page logged in as teacher1
+    When I navigate to "Bulk edit quizzes" in current page administration
+    And I click on "Select Quiz E" "checkbox"
+    And I press "Close now"
+    # Close must be after open, and the quiz is closed either way, so the future open date is cleared.
+    Then I should see "Open:" in the "Review changes" "dialogue"
+    And I should see "(none)" in the "Review changes" "dialogue"
+    And I click on "Save" "button" in the "Review changes" "dialogue"
+    And I should see "1 quiz(zes) updated."
+    And the field "Open: Quiz E" matches value ""
+    And the field "Close: Quiz E" does not match value ""

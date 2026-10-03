@@ -56,7 +56,7 @@ if ($data = data_submitted()) {
         foreach ((array) ($data->$key ?? []) as $quizid => $fields) {
             $quizid = clean_param($quizid, PARAM_INT);
             foreach ((array) $fields as $field => $value) {
-                if (in_array($field, updater::FIELDS, true)) {
+                if (in_array($field, updater::fields(), true)) {
                     $target[$quizid][$field] = clean_param($value, PARAM_RAW_TRIMMED);
                 }
             }

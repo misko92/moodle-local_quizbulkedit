@@ -495,6 +495,11 @@ export const init = (formId) => {
             if (field === 'timeclose' && open.value !== '' && open.value >= now) {
                 setValue(open, '');
             }
+            // Likewise a due date (Moodle 5.3+) can't be after closing.
+            const due = row.querySelector('input[data-field="duedate"]');
+            if (field === 'timeclose' && due && due.value !== '' && due.value > now) {
+                setValue(due, '');
+            }
             // Opening a hidden quiz now would still leave students unable to see it.
             const visible = row.querySelector('select[data-field="visible"]');
             if (field === 'timeopen' && visible && !visible.disabled && visible.value === '0') {

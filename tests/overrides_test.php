@@ -39,6 +39,7 @@ final class overrides_test extends \advanced_testcase {
             'attemptsmode' => 'none', 'attempts' => 0, 'timeopenmode' => 'none', 'timeopen' => 0,
             'timeclosemode' => 'none', 'timeclose' => 0, 'timecloseminutes' => 0,
             'passwordmode' => 'none', 'password' => '', 'reason' => '',
+            'duedatemode' => 'none', 'duedate' => 0, 'dueminutes' => 0,
         ]);
     }
 
@@ -132,5 +133,45 @@ final class overrides_test extends \advanced_testcase {
         $gen->get_plugin_generator('mod_quiz')->create_instance(['course' => $course->id]);
         $this->setUser($gen->create_and_enrol($course, 'student'));
         $this->assertSame([], overrides::get_quizzes($course));
+    }
+
+    public function test_due_dates_are_kept_and_can_be_extended(): void {
+        global $DB;
+        $this->resetAfterTest();
+        if (!\local_quizbulkedit\local\updater::has_duedate()) {
+            $this->markTestSkipped('Quiz due dates need Moodle 5.3.');
+        }
+        $gen = $this->getDataGenerator();
+        $course = $gen->create_course();
+        $quiz = $gen->get_plugin_generator('mod_quiz')->create_instance(['course' => $course->id,
+            'timelimit' => HOURSECS, 'timeopen' => 1900000000, 'duedate' => 1900086400, 'timeclose' => 1900172800]);
+        $student = $gen->create_and_enrol($course, 'student');
+        $this->setUser($gen->create_and_enrol($course, 'editingteacher'));
+        // The student already has a later due date.
+        $DB->insert_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $student->id, 'duedate' => 1900100000]);
+        $targets = [['userid' => $student->id, 'name' => 'S']];
+
+        // Adding extra time must not wipe it.
+        $quizzes = overrides::get_quizzes($course);
+        overrides::apply($quizzes, overrides::plan($quizzes, $targets, $this->data([
+            'timelimitmode' => 'multiply', 'timelimitfactor' => 1.5,
+        ])));
+        $override = $DB->get_record('quiz_overrides', ['quiz' => $quiz->id, 'userid' => $student->id]);
+        $this->assertEquals(90 * MINSECS, $override->timelimit);
+        $this->assertEquals(1900100000, $override->duedate);
+
+        // Extend the quiz's due date by a day.
+        overrides::apply($quizzes, overrides::plan($quizzes, $targets, $this->data([
+            'duedatemode' => 'add', 'dueminutes' => 24 * 60,
+        ])));
+        $this->assertEquals(
+            1900086400 + DAYSECS,
+            $DB->get_field('quiz_overrides', 'duedate', ['quiz' => $quiz->id, 'userid' => $student->id])
+        );
+
+        // A due date after closing is refused, as in the quiz settings form.
+        $plan = overrides::plan($quizzes, $targets, $this->data(['duedatemode' => 'add', 'dueminutes' => 7 * 24 * 60]));
+        $this->assertSame('skip', $plan[0]['action']);
+        $this->assertSame(get_string('duedateafterclose', 'quiz'), $plan[0]['note']);
     }
 }

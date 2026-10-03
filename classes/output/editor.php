@@ -85,6 +85,7 @@ class editor implements renderable, templatable {
             'subnet' => 'text',
             'timeopen' => 'datetime-local',
             'timeclose' => 'datetime-local',
+            'duedate' => 'datetime-local',
             'attempts' => 'number',
             'name' => 'text',
             'grade' => 'number',
@@ -137,7 +138,7 @@ class editor implements renderable, templatable {
             $name = $cm->get_formatted_name();
             $values = [];
             $originals = [];
-            foreach (updater::FIELDS as $field) {
+            foreach (updater::fields() as $field) {
                 $originals[$field] = $this->original[$quizid][$field] ?? updater::format_value($field, $quiz->$field);
                 $values[$field] = $this->submitted[$quizid][$field] ?? $originals[$field];
             }

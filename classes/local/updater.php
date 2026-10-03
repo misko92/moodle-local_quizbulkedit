@@ -56,7 +56,7 @@ class updater {
     public const COLUMNGROUPS = [
         'general' => ['name', 'visible'],
         'restrictions' => ['password', 'subnet', 'seb', 'delay1', 'delay2'],
-        'timing' => ['timeopen', 'timeclose', 'timelimit', 'overduehandling', 'graceperiod'],
+        'timing' => ['timeopen', 'duedate', 'timeclose', 'timelimit', 'overduehandling', 'graceperiod'],
         'grade' => ['grade', 'gradepass', 'attempts', 'grademethod'],
         'layout' => ['navmethod'],
         'behaviour' => ['shuffleanswers', 'canredoquestions', 'attemptonlast'],
@@ -89,6 +89,38 @@ class updater {
     protected const NUMBERFIELDS = ['grade', 'gradepass'];
 
     /**
+     * Whether quizzes have a due date (Moodle 5.3+).
+     *
+     * @return bool
+     */
+    public static function has_duedate(): bool {
+        global $DB;
+        static $has = null;
+        if ($has === null || (defined('PHPUNIT_TEST') && PHPUNIT_TEST)) {
+            $has = $DB->get_manager()->field_exists('quiz', 'duedate');
+        }
+        return $has;
+    }
+
+    /**
+     * Editable columns of the quiz table on this site.
+     *
+     * @return string[]
+     */
+    public static function quiz_fields(): array {
+        return self::has_duedate() ? [...self::QUIZFIELDS, 'duedate'] : self::QUIZFIELDS;
+    }
+
+    /**
+     * All editable fields on this site.
+     *
+     * @return string[]
+     */
+    public static function fields(): array {
+        return [...self::SPECIALFIELDS, ...self::quiz_fields()];
+    }
+
+    /**
      * The table columns, in display order.
      *
      * @return string[]
@@ -106,6 +138,9 @@ class updater {
         $groups = self::COLUMNGROUPS;
         if (!seb::available()) {
             $groups['restrictions'] = array_values(array_diff($groups['restrictions'], [seb::FIELD]));
+        }
+        if (!self::has_duedate()) {
+            $groups['timing'] = array_values(array_diff($groups['timing'], ['duedate']));
         }
         return $groups;
     }
@@ -145,7 +180,7 @@ class updater {
             'id',
             array_keys($cms),
             '',
-            'id, course, name, grade, preferredbehaviour, ' . implode(', ', self::QUIZFIELDS)
+            'id, course, name, grade, preferredbehaviour, ' . implode(', ', self::quiz_fields())
         );
         $gradepasses = $DB->get_records_menu('grade_items', [
             'courseid' => $course->id, 'itemtype' => 'mod', 'itemmodule' => 'quiz', 'itemnumber' => 0,
@@ -219,6 +254,7 @@ class updater {
         switch ($field) {
             case 'timeopen':
             case 'timeclose':
+            case 'duedate':
                 if (empty($value)) {
                     return '';
                 }
@@ -280,6 +316,7 @@ class updater {
         switch ($field) {
             case 'timeopen':
             case 'timeclose':
+            case 'duedate':
                 if ($input === '') {
                     return 0;
                 }
@@ -343,7 +380,7 @@ class updater {
                 continue;
             }
             ['cm' => $cm, 'quiz' => $quiz] = $quizzes[$quizid];
-            foreach (self::FIELDS as $field) {
+            foreach (self::fields() as $field) {
                 if (!isset($fields[$field])) {
                     continue;
                 }
@@ -419,11 +456,20 @@ class updater {
                 }
             }
 
-            if (isset($changes[$quizid]['timeopen']) || isset($changes[$quizid]['timeclose'])) {
+            if (array_intersect_key($changes[$quizid] ?? [], array_flip(['timeopen', 'timeclose', 'duedate']))) {
                 $open = $changes[$quizid]['timeopen'] ?? $quiz->timeopen;
                 $close = $changes[$quizid]['timeclose'] ?? $quiz->timeclose;
                 if ($open && $close && $close <= $open && empty($errors[$quizid]['timeclose'])) {
                     $errors[$quizid]['timeclose'] = get_string('errorcloseopen', 'local_quizbulkedit');
+                }
+                // Moodle 5.3+: the due date must be after opening and no later than closing.
+                $due = self::has_duedate() ? ($changes[$quizid]['duedate'] ?? $quiz->duedate) : 0;
+                $field = isset($changes[$quizid]['duedate']) ? 'duedate' :
+                    (isset($changes[$quizid]['timeclose']) ? 'timeclose' : 'timeopen');
+                if ($due && $open && $due <= $open && empty($errors[$quizid][$field])) {
+                    $errors[$quizid][$field] = get_string('duedatebeforeopen', 'quiz');
+                } else if ($due && $close && $due > $close && empty($errors[$quizid][$field])) {
+                    $errors[$quizid][$field] = get_string('duedateafterclose', 'quiz');
                 }
             }
         }
@@ -473,7 +519,7 @@ class updater {
      * @return string string identifier
      */
     private static function error_string(string $field): string {
-        if (in_array($field, ['timeopen', 'timeclose'])) {
+        if (in_array($field, ['timeopen', 'timeclose', 'duedate'])) {
             return 'errordate';
         }
         if (in_array($field, self::REVIEWFIELDS)) {
@@ -505,7 +551,7 @@ class updater {
         $transaction = $DB->start_delegated_transaction();
         $count = 0;
         foreach ($changes as $quizid => $fields) {
-            $fields = array_intersect_key($fields, array_flip(self::FIELDS));
+            $fields = array_intersect_key($fields, array_flip(self::fields()));
             if (!$fields) {
                 continue;
             }
@@ -514,7 +560,7 @@ class updater {
             $context = context_module::instance($cm->id);
             require_capability('moodle/course:manageactivities', $context);
 
-            $update = array_intersect_key($fields, array_flip(self::QUIZFIELDS));
+            $update = array_intersect_key($fields, array_flip(self::quiz_fields()));
 
             $old = clone($quiz);
             if ($update) {
@@ -552,7 +598,10 @@ class updater {
                 require_capability('moodle/course:activityvisibility', $context);
                 set_coursemodule_visible($cm->id, $fields['visible'], 1, false);
             }
-            if ($old->timeopen != $quiz->timeopen || $old->timeclose != $quiz->timeclose) {
+            if (
+                $old->timeopen != $quiz->timeopen || $old->timeclose != $quiz->timeclose ||
+                ($old->duedate ?? 0) != ($quiz->duedate ?? 0)
+            ) {
                 quiz_update_events($quiz);
             }
             if (

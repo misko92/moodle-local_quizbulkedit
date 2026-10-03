@@ -115,6 +115,19 @@ class overrides_form extends moodleform {
         $mform->addElement('date_time_selector', 'timeopen', get_string('ovtimeopenvalue', 'local_quizbulkedit'));
         $mform->hideIf('timeopen', 'timeopenmode', 'eq', 'none');
 
+        if (\local_quizbulkedit\local\updater::has_duedate()) {
+            $mform->addElement('select', 'duedatemode', get_string('ovduedate', 'local_quizbulkedit'), [
+                'none' => $keep,
+                'set' => get_string('ovset', 'local_quizbulkedit'),
+                'add' => get_string('ovaddtodue', 'local_quizbulkedit'),
+            ]);
+            $mform->addElement('date_time_selector', 'duedate', get_string('ovduedatevalue', 'local_quizbulkedit'));
+            $mform->hideIf('duedate', 'duedatemode', 'neq', 'set');
+            $mform->addElement('float', 'dueminutes', get_string('ovminutes', 'local_quizbulkedit'));
+            $mform->setDefault('dueminutes', 0);
+            $mform->hideIf('dueminutes', 'duedatemode', 'neq', 'add');
+        }
+
         $mform->addElement('select', 'timeclosemode', get_string('ovtimeclose', 'local_quizbulkedit'), [
             'none' => $keep,
             'set' => get_string('ovset', 'local_quizbulkedit'),
@@ -160,8 +173,8 @@ class overrides_form extends moodleform {
             $errors['quizzes'] = get_string('ovneedquiz', 'local_quizbulkedit');
         }
         if ($data['action'] === 'save') {
-            $modes = ['timelimitmode', 'attemptsmode', 'timeopenmode', 'timeclosemode', 'passwordmode'];
-            if (!array_filter($modes, fn($mode) => $data[$mode] !== 'none') && trim($data['reason'] ?? '') === '') {
+            $modes = ['timelimitmode', 'attemptsmode', 'timeopenmode', 'timeclosemode', 'passwordmode', 'duedatemode'];
+            if (!array_filter($modes, fn($mode) => ($data[$mode] ?? 'none') !== 'none') && trim($data['reason'] ?? '') === '') {
                 $errors['timelimitmode'] = get_string('ovneedsetting', 'local_quizbulkedit');
             }
             if ($data['timelimitmode'] === 'multiply' && $data['timelimitfactor'] <= 0) {
@@ -172,6 +185,9 @@ class overrides_form extends moodleform {
             }
             if ($data['timelimitmode'] === 'add' && $data['timelimitminutes'] < 0) {
                 $errors['timelimitminutes'] = get_string('errorminutes', 'local_quizbulkedit');
+            }
+            if (($data['duedatemode'] ?? 'none') === 'add' && $data['dueminutes'] < 0) {
+                $errors['dueminutes'] = get_string('errorminutes', 'local_quizbulkedit');
             }
             if ($data['timeclosemode'] === 'add' && $data['timecloseminutes'] < 0) {
                 $errors['timecloseminutes'] = get_string('errorminutes', 'local_quizbulkedit');

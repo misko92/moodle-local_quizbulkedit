@@ -33,8 +33,20 @@ use stdClass;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class overrides {
-    /** @var string[] Settings an override can change. */
+    /** @var string[] Settings an override can change (plus duedate from Moodle 5.3, see settings()). */
     public const SETTINGS = ['timeopen', 'timeclose', 'timelimit', 'attempts', 'password'];
+
+    /**
+     * Settings an override can change on this site.
+     *
+     * Moodle 5.3 added the due date. The override manager's save replaces all of
+     * these, so every one must be carried through when merging.
+     *
+     * @return string[]
+     */
+    public static function settings(): array {
+        return updater::has_duedate() ? [...self::SETTINGS, 'duedate'] : self::SETTINGS;
+    }
 
     /**
      * The quizzes in a course whose overrides the current user may manage, in course order.
@@ -91,12 +103,12 @@ class overrides {
                 // The override manager drops values equal to the quiz's own settings.
                 // The reason is only a note, so on its own it doesn't call for an override.
                 $effective = array_filter(
-                    array_intersect_key($values, array_flip(self::SETTINGS)),
+                    array_intersect_key($values, array_flip(self::settings())),
                     fn($value, $key) => $value !== null && $value != $quiz->$key,
                     ARRAY_FILTER_USE_BOTH
                 );
                 $unchanged = $existing && !array_filter(
-                    self::SETTINGS,
+                    self::settings(),
                     fn($key) => (string) ($existing->$key ?? '') !== (string) ($values[$key] ?? '')
                 );
                 $reasonchanged = $existing && isset($values['reason']) && $values['reason'] !== (string) $existing->reason;
@@ -113,9 +125,16 @@ class overrides {
                 } else {
                     $open = $values['timeopen'] ?? $quiz->timeopen;
                     $close = $values['timeclose'] ?? $quiz->timeclose;
+                    $due = $values['duedate'] ?? ($quiz->duedate ?? 0);
                     if ($open && $close && $close <= $open) {
                         $row['action'] = 'skip';
                         $notes[] = get_string('closebeforeopen', 'quiz');
+                    } else if ($due && $open && $due <= $open) {
+                        $row['action'] = 'skip';
+                        $notes[] = get_string('duedatebeforeopen', 'quiz');
+                    } else if ($due && $close && $due > $close) {
+                        $row['action'] = 'skip';
+                        $notes[] = get_string('duedateafterclose', 'quiz');
                     } else {
                         $row['action'] = $existing ? 'update' : 'create';
                         $row['values'] = $values;
@@ -138,7 +157,7 @@ class overrides {
      */
     protected static function new_values(stdClass $quiz, ?stdClass $existing, stdClass $data): array {
         $values = [];
-        foreach (self::SETTINGS as $key) {
+        foreach (self::settings() as $key) {
             $values[$key] = $existing->$key ?? null;
         }
         $notes = [];
@@ -174,6 +193,18 @@ class overrides {
                     break;
                 }
                 $values['timeclose'] = (int) ($quiz->timeclose + round($data->timecloseminutes * MINSECS));
+                break;
+        }
+        switch ($data->duedatemode ?? 'none') {
+            case 'set':
+                $values['duedate'] = (int) $data->duedate;
+                break;
+            case 'add':
+                if (empty($quiz->duedate)) {
+                    $notes[] = get_string('ovnodue', 'local_quizbulkedit');
+                    break;
+                }
+                $values['duedate'] = (int) ($quiz->duedate + round($data->dueminutes * MINSECS));
                 break;
         }
         if ($data->passwordmode === 'set') {
@@ -234,7 +265,7 @@ class overrides {
     public static function describe($values): string {
         $values = (array) $values;
         $parts = [];
-        foreach (self::SETTINGS as $key) {
+        foreach (self::settings() as $key) {
             if (!isset($values[$key])) {
                 continue;
             }
@@ -242,6 +273,7 @@ class overrides {
             switch ($key) {
                 case 'timeopen':
                 case 'timeclose':
+                case 'duedate':
                     $shown = $value ? userdate($value) : get_string('ovnone', 'local_quizbulkedit');
                     break;
                 case 'timelimit':
