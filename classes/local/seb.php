@@ -112,7 +112,7 @@ class seb {
         if ($can(settings_provider::USE_SEB_TEMPLATE)) {
             foreach (template::get_records(['enabled' => 1], 'name') as $template) {
                 $choices['t' . $template->get('id')] = get_string('seb_use_template', 'quizaccess_seb') . ': ' .
-                    format_string($template->get('name'));
+                    format_string($template->get('name'), true, ['context' => \context_system::instance(), 'escape' => false]);
             }
         }
         if ($can(settings_provider::USE_SEB_CONFIG_MANUALLY)) {
@@ -135,8 +135,11 @@ class seb {
             case settings_provider::USE_SEB_CONFIG_MANUALLY:
                 return get_string('seb_use_manually', 'quizaccess_seb');
             case settings_provider::USE_SEB_TEMPLATE:
-                return get_string('seb_use_template', 'quizaccess_seb') .
-                    ($quiz->sebtemplate === '' ? '' : ': ' . format_string($quiz->sebtemplate));
+                if ($quiz->sebtemplate === '') {
+                    return get_string('seb_use_template', 'quizaccess_seb');
+                }
+                return get_string('seb_use_template', 'quizaccess_seb') . ': ' .
+                    format_string($quiz->sebtemplate, true, ['context' => \context_system::instance(), 'escape' => false]);
             case settings_provider::USE_SEB_UPLOAD_CONFIG:
                 return get_string('seb_use_upload', 'quizaccess_seb');
             default:

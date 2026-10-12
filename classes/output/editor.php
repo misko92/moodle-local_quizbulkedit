@@ -16,6 +16,7 @@
 
 namespace local_quizbulkedit\output;
 
+use cm_info;
 use local_quizbulkedit\local\seb;
 use local_quizbulkedit\local\updater;
 use mod_quiz\question\display_options;
@@ -98,7 +99,7 @@ class editor implements renderable, templatable {
         $copychoices = [];
         $sebchoices = ['0' => get_string('no')] + seb::turn_on_choices();
         foreach ($this->quizzes as $quizid => ['cm' => $cm, 'quiz' => $quiz]) {
-            $copychoices[$quizid] = get_string('reviewcopy', 'local_quizbulkedit', $cm->get_formatted_name());
+            $copychoices[$quizid] = get_string('reviewcopy', 'local_quizbulkedit', $cm->get_formatted_name(['escape' => false]));
             if ($quiz->seb) {
                 $sebchoices['q' . $quizid] = $copychoices[$quizid] . ' (' . seb::describe($quiz) . ')';
             }
@@ -135,7 +136,8 @@ class editor implements renderable, templatable {
 
         $rows = [];
         foreach ($this->quizzes as $quizid => ['cm' => $cm, 'quiz' => $quiz]) {
-            $name = $cm->get_formatted_name();
+            // Plain text: the template escapes it.
+            $name = $cm->get_formatted_name(['escape' => false]);
             $values = [];
             $originals = [];
             foreach (updater::fields() as $field) {
@@ -185,7 +187,7 @@ class editor implements renderable, templatable {
                 'name' => $name,
                 'url' => (new moodle_url('/mod/quiz/view.php', ['id' => $cm->id]))->out(false),
                 'editurl' => (new moodle_url('/course/modedit.php', ['update' => $cm->id]))->out(false),
-                'section' => get_section_name($cm->get_course(), $cm->sectionnum),
+                'section' => $this->section_name($cm),
                 'hidden' => !$cm->visible,
                 'cells' => $cells,
                 'reviewopen' => $reviewchanged || $reviewerrors,
@@ -212,6 +214,20 @@ class editor implements renderable, templatable {
             ),
             'reviewgrid' => json_encode($this->review_grid_strings()),
         ];
+    }
+
+    /**
+     * The name of a quiz's section, as plain text (the template escapes it).
+     *
+     * @param cm_info $cm
+     * @return string
+     */
+    protected function section_name(cm_info $cm): string {
+        $section = $cm->get_modinfo()->get_section_info($cm->sectionnum);
+        if ((string) $section->name !== '') {
+            return format_string($section->name, true, ['context' => $cm->context->get_course_context(), 'escape' => false]);
+        }
+        return course_get_format($cm->get_course())->get_default_section_name($section);
     }
 
     /**

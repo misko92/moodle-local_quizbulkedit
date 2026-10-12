@@ -58,10 +58,11 @@ foreach (get_enrolled_users($context, 'mod/quiz:attempt', 0, 'u.*', 'u.lastname,
 $groups = [];
 foreach (groups_get_all_groups($course->id) as $group) {
     if ($allgroups || in_array($group->id, $mygroups)) {
-        $groups[$group->id] = format_string($group->name, true, ['context' => $context]);
+        $groups[$group->id] = format_string($group->name, true, ['context' => $context, 'escape' => false]);
     }
 }
-$quiznames = array_map(fn($entry) => $entry['cm']->get_formatted_name(), $quizzes);
+// Names are plain text here; the form escapes them, the tables below use s().
+$quiznames = array_map(fn($entry) => $entry['cm']->get_formatted_name(['escape' => false]), $quizzes);
 
 $customdata = [
     'courseid' => $course->id,
@@ -131,7 +132,7 @@ if ($plan !== null) {
     );
     foreach ($plan as $row) {
         $table->data[] = [
-            $quiznames[$row['quizid']],
+            s($quiznames[$row['quizid']]),
             s($row['target']['name']),
             get_string('ovdo' . $row['action'], 'local_quizbulkedit'),
             overrides::describe($row['existing']),
@@ -153,7 +154,10 @@ if (!$current) {
 } else {
     $userids = array_filter(array_column($current, 'userid'));
     $names = $userids ? array_map('fullname', $DB->get_records_list('user', 'id', array_unique($userids))) : [];
-    $allgroupnames = array_map(fn($group) => format_string($group->name), groups_get_all_groups($course->id));
+    $allgroupnames = array_map(
+        fn($group) => format_string($group->name, true, ['context' => $context, 'escape' => false]),
+        groups_get_all_groups($course->id)
+    );
     $table = new html_table();
     $table->attributes['class'] = 'generaltable table-sm';
     $table->head = array_map(
@@ -167,7 +171,7 @@ if (!$current) {
             'cmid' => $quizzes[$override->quiz]['cm']->id, 'mode' => $override->userid ? 'user' : 'group',
         ]);
         $table->data[] = [
-            html_writer::link($link, $quiznames[$override->quiz]),
+            html_writer::link($link, s($quiznames[$override->quiz])),
             s($who),
             overrides::describe($override),
             s($override->reason ?? ''),
